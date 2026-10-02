@@ -12,42 +12,16 @@
 
       perSystem = { config, self', pkgs, lib, system, ... }: let
 
-        # Python environment with only actually imported packages (100% pre-built in binary cache)
-        pythonEnv = pkgs.python312.withPackages (ps: with ps; [
-          # Web framework
-          fastapi
-          uvicorn
-          python-multipart
-          httpx
-
-          # PCAP / network analysis
-          dpkt
-          scapy
-          pyshark
-
-          # Cryptography
-          cryptography
-          pyopenssl
-
-          # ML
-          scikit-learn
-          numpy
-
-          # Reporting
-          jinja2
-
-          # Utilities & testing
-          pydantic
-          python-dateutil
-          pytest
-        ]);
-
       in {
         devShells.default = pkgs.mkShell {
           name = "securemailscope";
 
           packages = [
-            pythonEnv
+            pkgs.python312
+            pkgs.python312Packages.pip
+            pkgs.python312Packages.virtualenv
+            pkgs.python312Packages.setuptools
+            pkgs.python312Packages.wheel
 
             # Network capture & analysis
             pkgs.wireshark       # provides tshark, capinfos, dumpcap
@@ -69,6 +43,12 @@
           ];
 
           shellHook = ''
+            if [ ! -d ".venv" ]; then
+              echo "  Creating .venv..."
+              python -m venv .venv
+            fi
+            source .venv/bin/activate
+
             echo ""
             echo "╔══════════════════════════════════════════════════════╗"
             echo "║       SecureMailScope Development Environment        ║"
@@ -96,14 +76,14 @@
           pname = "securemailscope-backend";
           version = "0.1.0";
           src = ./backend;
-          buildInputs = [ pythonEnv ];
+          buildInputs = [ pkgs.python312 ];
           installPhase = ''
             mkdir -p $out/bin $out/lib
             cp -r . $out/lib/securemailscope
             cat > $out/bin/securemailscope-backend <<EOF
             #!${pkgs.bash}/bin/bash
             export PYTHONPATH=$out/lib:$PYTHONPATH
-            exec ${pythonEnv}/bin/python -m uvicorn api.main:app --host 0.0.0.0 --port 8000 "\$@"
+            exec ${pkgs.python312}/bin/python -m uvicorn api.main:app --host 0.0.0.0 --port 8000 "\$@"
             EOF
             chmod +x $out/bin/securemailscope-backend
           '';
