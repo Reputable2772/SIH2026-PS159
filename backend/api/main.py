@@ -161,9 +161,17 @@ async def get_findings(
     result = _get_result_or_404(analysis_id)
     findings = result.all_findings
     if severity:
-        findings = [f for f in findings if f.severity.value == severity]
+        sev_lower = severity.lower()
+        findings = [
+            f for f in findings
+            if f.severity.value.lower() == sev_lower or f.severity.name.lower() == sev_lower
+        ]
     if category:
-        findings = [f for f in findings if f.category.value == category]
+        cat_lower = category.lower()
+        findings = [
+            f for f in findings
+            if f.category.value.lower() == cat_lower or f.category.name.lower() == cat_lower
+        ]
     return [f.model_dump(mode="json") for f in findings]
 
 
