@@ -133,7 +133,7 @@ just compose-down
 just gen-pcaps
 ```
 
-This creates synthetic PCAPs in `demo_pcaps/`:
+This creates canonical evaluation PCAPs in `demo_pcaps/`, representing 38 total test scenarios covering baseline protocols, messy edge cases, downgrade attacks, and real-world captures:
 
 | PCAP | Scenario | Expected Findings |
 |---|---|---|
@@ -144,6 +144,8 @@ This creates synthetic PCAPs in `demo_pcaps/`:
 | `05_starttls_fallback.pcap` | STARTTLS rejected → cleartext | starttls_anomaly |
 | `06_anomalous_handshake.pcap` | Weak 1024-bit key | weak_key |
 | `07_plaintext_smtp.pcap` | No TLS at all | starttls_anomaly |
+| `08-25_*.pcap` | Messy edge cases, MITM attacks, retransmissions, fuzzing | Various protocol & TLS anomalies |
+| `26-38_*.pcap` | Real-world Wireshark and Arkime packet captures | Live SMTP/IMAP/POP3 captures |
 
 ---
 
@@ -167,10 +169,17 @@ Produces precision/recall/F1 metrics for both rule engine and ML anomaly detecti
 
 ---
 
-## Tests
+## Tests & Code Quality
 
 ```bash
+# Run unit & integration test suite (101 tests)
 just test
+
+# Run code style, linters, and frontend build checks
+just lint
+
+# Auto-format and fix python code
+just format
 ```
 
 ---
@@ -242,8 +251,8 @@ Do not use for compliance or regulatory purposes.
 ├── flake.nix              — Nix development environment
 ├── pyproject.toml         — Python project config
 ├── justfile               — Task runner
-├── compose.yaml           — Podman/Docker Compose configuration
-├── podman-compose.yml     — Compose specification
+├── compose.yaml           — Podman/Docker Compose stack (podman-compose.yml is identical)
+├── podman-compose.yml     — Alias of compose.yaml for podman-compose compatibility
 ├── backend/
 │   ├── api/main.py        — FastAPI backend
 │   ├── pcap/              — PCAP ingestion + pipeline
