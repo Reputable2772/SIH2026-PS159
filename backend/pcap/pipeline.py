@@ -234,6 +234,8 @@ def _build_session(
                 cert_info = parse_certificate_der(der)
                 if cert_info:
                     tls_hs.certificates.append(cert_info)
+                    tls_hs.cert_observability = ObservabilityStatus.OBSERVED
+                    tls_hs.cert_observability_note = "Certificate extracted from capture."
                     # Add certificate-level findings
                     cert_signals = assess_cert_risk(cert_info)
                     for sig in cert_signals:

@@ -133,7 +133,7 @@ def extract_features(session) -> np.ndarray:
         features[3] = 1.0 if hs.forward_secrecy == ForwardSecrecyStatus.YES else 0.0
 
         # Certificate
-        cert_obs = hs.cert_observability == ObservabilityStatus.OBSERVED
+        cert_obs = (hs.cert_observability == ObservabilityStatus.OBSERVED) or bool(hs.certificates)
         features[4] = 1.0 if cert_obs else 0.0
         if hs.certificates:
             cert = hs.certificates[0]
