@@ -161,7 +161,10 @@ class TestRiskScoring:
         assert _risk_level(10) == "CRITICAL"
 
     def test_risk_level_high(self):
-        assert _risk_level(45) == "MEDIUM"
+        assert _risk_level(45) == "HIGH"
+
+    def test_risk_level_medium(self):
+        assert _risk_level(60) == "MEDIUM"
 
     def test_risk_level_minimal(self):
         assert _risk_level(90) == "MINIMAL"
