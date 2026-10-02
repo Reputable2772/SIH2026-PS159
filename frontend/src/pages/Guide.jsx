@@ -117,16 +117,24 @@ export default function Guide() {
       {
         id: 'synth-gen',
         title: 'Synthetic Test PCAP Generation (Offline / Zero-Root)',
-        description: 'Generate 7 realistic test PCAPs with Scapy in user space without requiring network permissions or mail servers.',
+        description: 'Generate 15 realistic, messy, and attack-oriented test PCAPs with Scapy in user space without requiring network permissions or live mail servers.',
         cmd: 'just gen-pcaps',
         explanation: [
-          '01_secure_tls12.pcap : Clean TLS 1.2 ECDHE with valid CA cert',
-          '02_legacy_tls10.pcap : Deprecated TLS 1.0 handshake',
+          '01_secure_tls12.pcap : Clean TLS 1.2 ECDHE with valid CA cert (Minimal risk baseline)',
+          '02_legacy_tls10.pcap : Deprecated TLS 1.0 handshake (RFC 8996 violation)',
           '03_weak_cipher.pcap : 3DES cipher with static RSA (No Forward Secrecy)',
           '04_expired_cert.pcap : Direct IMAPS with expired X.509 certificate',
           '05_starttls_fallback.pcap : STARTTLS advertised, rejected with 454, plaintext credentials transmitted',
-          '06_anomalous_handshake.pcap : 1024-bit weak RSA public key',
-          '07_plaintext_smtp.pcap : Cleartext SMTP session with no encryption'
+          '06_anomalous_handshake.pcap : 1024-bit weak RSA public key with ML anomaly',
+          '07_plaintext_smtp.pcap : Cleartext SMTP session with zero encryption',
+          '08_midstream_truncated_tls.pcap : Truncated mid-stream capture starting mid-flow and cut off by TCP RST',
+          '09_starttls_stripping_mitm.pcap : Active MitM attack replacing STARTTLS with PIPELINING; cleartext auth harvested',
+          '10_multi_stream_mixed_protocols.pcap : Multi-stream chaos: 4 concurrent email flows (25, 587, 143, 993) plus DNS/HTTP noise',
+          '11_retransmissions_loss_rst.pcap : Lossy network with duplicate ClientHello retransmissions and sudden RST drop',
+          '12_corrupt_tls_record.pcap : Corrupt TLS record with invalid content-type (0x55) and bogus version (0x0399)',
+          '13_bruteforce_credential_spray.pcap : Cleartext credential spray attack over port 25 terminated with 421',
+          '14_tls13_encrypted_certs.pcap : Modern TLS 1.3 AEAD negotiation where certificates are encrypted by design (RFC 8446 §4.4.2)',
+          '15_silent_server_timeout.pcap : Zombie server drops into blackhole silence; client retransmits and times out'
         ]
       }
     ]

@@ -1,128 +1,180 @@
 import React from 'react'
+import { useNavigate } from 'react-router-dom'
+import { FileJson, FileText, FileDown, ExternalLink, Hash, Shield, CheckCircle2, AlertTriangle, Calendar, HardDrive } from 'lucide-react'
 import { useAnalysis } from '../hooks/useApi.js'
-import { FileJson, FileText, FileDown, ExternalLink } from 'lucide-react'
+import SeverityBadge from '../components/SeverityBadge.jsx'
 
 export default function Reports({ analysisId }) {
   const { data, loading, error } = useAnalysis(analysisId)
+  const navigate = useNavigate()
 
-  if (!analysisId) return <EmptyState />
-  if (loading) return <Loading />
-  if (error || !data) return <ErrorState msg={error} />
+  if (!analysisId) {
+    return (
+      <div className="empty-state-page">
+        <div className="empty-state-icon">📄</div>
+        <div className="empty-state-title">No Active Analysis Selected</div>
+        <div className="empty-state-body">
+          Upload or select an audited packet capture to generate publication-ready JSON, HTML, and PDF reports.
+        </div>
+        <button className="btn btn-primary" onClick={() => navigate('/')}>
+          Select Capture in Overview
+        </button>
+      </div>
+    )
+  }
+
+  if (loading) return <PageSkeleton label="Preparing report artifacts..." />
+
+  if (error || !data) {
+    return <div className="callout callout-critical">Error: {error || 'Analysis not found'}</div>
+  }
 
   const id = data.analysis_id
   const baseUrl = `/api/analysis/${id}/report`
+  const capture = data.capture
+  const risk = data.risk_score
+
+  const exportFormats = [
+    {
+      icon: FileDown,
+      label: 'PDF Executive Report',
+      subtitle: 'Formal Forensic Summary',
+      description: 'Publication-grade audit document including capture SHA-256 hash, score breakdown, findings with frame numbers, TLS 1.3 observability notes, and remediation guidance.',
+      accent: 'var(--accent)',
+      accentDim: 'var(--accent-dim)',
+      href: `${baseUrl}/pdf`,
+      download: `securemailscope_${id.slice(0, 8)}.pdf`,
+      btnLabel: 'Download PDF Report',
+      btnClass: 'btn btn-primary',
+      target: undefined,
+    },
+    {
+      icon: FileText,
+      label: 'HTML Interactive Audit',
+      subtitle: 'Self-Contained Dark-Mode Web Report',
+      description: 'Standalone HTML document styled for presentations and audits. Features expandable findings, protocol summaries, and state machine diagrams.',
+      accent: 'var(--low)',
+      accentDim: 'var(--low-bg)',
+      href: `${baseUrl}/html`,
+      download: undefined,
+      btnLabel: 'Open HTML Report',
+      btnClass: 'btn btn-secondary',
+      target: '_blank',
+    },
+    {
+      icon: FileJson,
+      label: 'Machine-Readable JSON',
+      subtitle: 'Structured Automation Data',
+      description: 'Complete JSON payload containing all session objects, certificate details, 16-D anomaly feature vectors, evidence records, and metadata for SIEM integration.',
+      accent: 'var(--info)',
+      accentDim: 'var(--info-bg)',
+      href: `${baseUrl}/json`,
+      download: `securemailscope_${id.slice(0, 8)}.json`,
+      btnLabel: 'Download JSON Export',
+      btnClass: 'btn btn-secondary',
+      target: undefined,
+    },
+  ]
+
+  const metaItems = [
+    { icon: HardDrive, label: 'PCAP Filename', value: capture.pcap_filename, mono: false },
+    { icon: Hash, label: 'File Size & Frames', value: `${((capture.file_size_bytes || 0) / 1024).toFixed(1)} KB · ${capture.packet_count} packets`, mono: false },
+    { icon: Shield, label: 'SHA-256 Hash', value: `${capture.sha256_hash?.slice(0, 24)}...`, mono: true },
+    { icon: Calendar, label: 'Analyzed At', value: new Date(capture.analyzed_at).toUTCString(), mono: false },
+    { icon: Shield, label: 'Composite Score', value: `${Math.round(risk.score)} / 100`, mono: false, extra: <SeverityBadge severity={risk.level} /> },
+    { icon: CheckCircle2, label: 'Total Sessions', value: `${data.sessions?.length || 0} TCP streams`, mono: false },
+    { icon: Shield, label: 'Encrypted / Plaintext', value: `${data.protocol_summary?.tls_sessions} TLS · ${data.protocol_summary?.plaintext_sessions} Plaintext`, mono: false },
+    { icon: CheckCircle2, label: 'Forward Secrecy', value: `${data.protocol_summary?.forward_secrecy_yes} sessions confirmed`, mono: false },
+    { icon: AlertTriangle, label: 'Security Findings', value: `${data.all_findings?.length || 0} total · ${risk.critical_count} critical`, mono: false },
+    { icon: Shield, label: 'ML Anomalies', value: `${risk.ml_anomaly_count} sessions flagged`, mono: false },
+    { icon: Shield, label: 'TLS 1.3 Scope Note', value: 'RFC 8446 §4.4.2 — certs encrypted by protocol design', mono: false },
+    { icon: Shield, label: 'Engine Version', value: `SecureMailScope v${capture.tool_version || '0.1.0'}`, mono: false },
+  ]
 
   return (
-    <div>
+    <div className="page-fade-in" style={{ maxWidth: 1050, margin: '0 auto' }}>
       <div className="page-header">
-        <h2 className="page-title">Reports</h2>
-        <p className="page-subtitle">{data.capture.pcap_filename} — Analysis {id.slice(0, 8)}</p>
+        <h1 className="page-title">Cryptographic Audit Reports</h1>
+        <p className="page-subtitle">
+          Export forensic findings, protocol state verification, and composite risk assessments in machine-readable JSON, interactive HTML, or publication-ready PDF formats.
+        </p>
       </div>
 
-      {/* Report cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-        <ReportCard
-          icon={<FileJson size={32} color="#3fb950" />}
-          title="JSON Report"
-          description="Machine-readable complete analysis. Contains all sessions, findings, certificates, risk scores, and metadata in structured JSON format."
-          href={`${baseUrl}/json`}
-          label="Download JSON"
-          color="#3fb950"
-        />
-        <ReportCard
-          icon={<FileText size={32} color="#58a6ff" />}
-          title="HTML Report"
-          description="Human-readable forensic report with dark-mode styling. Contains all findings, STARTTLS analysis, TLS summary, and recommendations."
-          href={`${baseUrl}/html`}
-          label="Open HTML Report"
-          color="#58a6ff"
-          newTab
-        />
-        <ReportCard
-          icon={<FileDown size={32} color="#f5a623" />}
-          title="PDF Report"
-          description="Professional audit-ready PDF forensic report. Includes PCAP SHA-256 hash, all findings, TLS 1.3 limitation notes, and score rationale."
-          href={`${baseUrl}/pdf`}
-          label="Download PDF"
-          color="#f5a623"
-        />
+      {/* Export Cards */}
+      <div className="report-export-grid">
+        {exportFormats.map(fmt => {
+          const Icon = fmt.icon
+          return (
+            <div key={fmt.label} className="report-export-card" style={{ borderTop: `3px solid ${fmt.accent}` }}>
+              <div className="report-export-card-top">
+                <div className="report-export-icon" style={{ background: fmt.accentDim, color: fmt.accent }}>
+                  <Icon size={24} />
+                </div>
+                <div>
+                  <div className="report-export-label">{fmt.label}</div>
+                  <div className="report-export-subtitle">{fmt.subtitle}</div>
+                </div>
+              </div>
+              <p className="report-export-desc">{fmt.description}</p>
+              <a
+                href={fmt.href}
+                download={fmt.download}
+                target={fmt.target}
+                rel={fmt.target ? 'noreferrer' : undefined}
+                className={fmt.btnClass}
+                style={{ width: '100%', gap: '0.4rem', ...(fmt.accent !== 'var(--accent)' ? { borderColor: fmt.accent, color: fmt.accent } : {}) }}
+              >
+                {fmt.target ? <ExternalLink size={15} /> : <FileDown size={15} />}
+                {fmt.btnLabel}
+              </a>
+            </div>
+          )
+        })}
       </div>
 
-      {/* Report contents summary */}
-      <div className="card" style={{ marginBottom: '1.25rem' }}>
-        <div className="card-header"><div className="card-title">Report Contents</div></div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', fontSize: '0.83rem' }}>
-          {[
-            ['Report Metadata', '✓'],
-            ['Capture Metadata + SHA-256', '✓'],
-            ['Protocol Summary', '✓'],
-            ['Session Summary', `${data.sessions.length} sessions`],
-            ['TLS Summary', `${data.protocol_summary.tls_sessions} TLS sessions`],
-            ['Certificate Analysis', data.protocol_summary.tls_sessions > 0 ? '✓ (where observable)' : '—'],
-            ['Security Findings', `${data.all_findings.length} total`],
-            ['Risk Score', `${data.risk_score.score}/100 (${data.risk_score.level})`],
-            ['Recommendations', `${data.recommendations?.length || 0} recommendations`],
-            ['ML Anomaly Findings', `${data.risk_score.ml_anomaly_count} anomalies`],
-            ['TLS 1.3 Limitations', '✓ documented'],
-            ['Tool Version', 'SecureMailScope v0.1.0'],
-          ].map(([label, value]) => (
-            <div key={label} style={{ display: 'flex', gap: '0.5rem', padding: '0.3rem 0', borderBottom: '1px solid var(--border)' }}>
-              <span style={{ color: 'var(--text-muted)', minWidth: 200 }}>{label}</span>
-              <span style={{ color: 'var(--info)' }}>{value}</span>
+      {/* Audit Provenance */}
+      <div className="card" style={{ marginBottom: '1.5rem' }}>
+        <div className="card-header">
+          <div className="card-title">Forensic Artifacts &amp; Audit Provenance</div>
+          <span style={{ fontSize: '0.74rem', color: 'var(--text-dim)', fontFamily: 'monospace' }}>
+            ID: {id}
+          </span>
+        </div>
+
+        <div className="report-meta-grid">
+          {metaItems.map(({ icon: Icon, label, value, mono, extra }) => (
+            <div key={label} className="report-meta-item">
+              <div className="report-meta-label">
+                <Icon size={13} color="var(--text-dim)" />
+                {label}
+              </div>
+              <div className="report-meta-value" style={{ fontFamily: mono ? 'monospace' : 'inherit' }}>
+                {value}
+                {extra && <span style={{ marginLeft: '0.5rem' }}>{extra}</span>}
+              </div>
             </div>
           ))}
         </div>
       </div>
 
       {/* Disclaimer */}
-      <div className="limitation-box">
-        <strong>Disclaimer:</strong> The SecureMailScope Composite Risk Score is a prototype scoring methodology
-        developed for SIH 2026 PS 26159. It is <strong>NOT</strong> an official NIST, BIS, NTRO, or any other
-        regulatory score. Do not use this score for compliance or regulatory purposes.
-      </div>
-
-      {/* TLS 1.3 note in reports context */}
-      <div className="tls13-note" style={{ marginTop: '0.75rem' }}>
-        <strong>TLS 1.3 in Reports:</strong> For TLS 1.3 sessions, the report correctly states that
-        X.509 certificate contents are not observable from passive capture. This is documented as a
-        technical limitation, not suppressed or falsified. Observable data (TLS version, cipher suite,
-        key exchange type) is still reported.
+      <div className="callout callout-info" style={{ fontSize: '0.8rem', lineHeight: 1.55 }}>
+        <strong>Scoring Prototype Notice:</strong> The SecureMailScope Composite Risk Score is an experimental methodology developed for Smart India Hackathon 2026 (PS 26159). It is strictly a relative posture metric and is <strong>not</strong> an official NIST, BIS, NTRO, or regulatory compliance rating.
       </div>
     </div>
   )
 }
 
-function ReportCard({ icon, title, description, href, label, color, newTab }) {
+function PageSkeleton({ label }) {
   return (
-    <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-        {icon}
-        <div style={{ fontWeight: 600, fontSize: '1rem' }}>{title}</div>
+    <div className="page-skeleton">
+      <div className="skeleton-bar" style={{ width: '40%', height: 28, marginBottom: '0.5rem' }} />
+      <div className="skeleton-bar" style={{ width: '60%', height: 16, marginBottom: '2rem' }} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.25rem', marginBottom: '1.75rem' }}>
+        {[1, 2, 3].map(i => <div key={i} className="skeleton-bar" style={{ height: 200 }} />)}
       </div>
-      <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', flex: 1, lineHeight: 1.6 }}>
-        {description}
-      </div>
-      <a
-        href={href}
-        target={newTab ? '_blank' : '_self'}
-        rel="noreferrer"
-        className="btn btn-secondary"
-        style={{ borderColor: color, color, justifyContent: 'center' }}
-        download={!newTab}
-      >
-        {newTab ? <ExternalLink size={14} /> : <FileDown size={14} />}
-        {label}
-      </a>
+      <div className="skeleton-bar" style={{ width: '100%', height: 300 }} />
+      <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.84rem', marginTop: '1.5rem' }}>{label}</div>
     </div>
   )
-}
-
-function EmptyState() {
-  return <div className="empty-state"><div className="empty-icon">📊</div><p>Select an analysis to generate reports.</p></div>
-}
-function Loading() {
-  return <div style={{ display: 'flex', gap: '1rem', padding: '3rem', alignItems: 'center' }}><div className="spinner" />Loading...</div>
-}
-function ErrorState({ msg }) {
-  return <div style={{ color: 'var(--critical)', padding: '2rem' }}>Error: {msg}</div>
 }
