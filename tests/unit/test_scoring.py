@@ -2,17 +2,13 @@
 Unit tests for Risk Scoring Engine and Posture Evaluation.
 """
 import pytest
-from datetime import datetime, timezone
-
 from backend.models.session import (
     ApplicationProtocol,
-    CertificateInfo,
     Evidence,
     Finding,
     FindingCategory,
     FindingSeverity,
     ForwardSecrecyStatus,
-    RiskScore,
     STARTTLSState,
     TCPSession,
     TLSHandshakeInfo,
@@ -21,9 +17,8 @@ from backend.models.session import (
 from backend.posture.engine import PostureRuleEngine
 from backend.posture.scoring import (
     compute_risk_score,
-    prioritize_findings,
     generate_recommendations,
-    DEFAULT_WEIGHTS,
+    prioritize_findings,
 )
 
 

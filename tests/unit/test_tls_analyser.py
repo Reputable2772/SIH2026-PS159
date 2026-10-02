@@ -13,8 +13,13 @@ from backend.tls.analyser import (
 )
 from backend.posture.scoring import compute_risk_score, _risk_level
 from backend.models.session import (
-    TCPSession, TLSHandshake, Finding, FindingSeverity, FindingCategory, Evidence,
-    ApplicationProtocol, STARTTLSState, ForwardSecrecyStatus as FS,
+    ApplicationProtocol,
+    Evidence,
+    Finding,
+    FindingCategory,
+    FindingSeverity,
+    STARTTLSState,
+    TCPSession,
 )
 
 

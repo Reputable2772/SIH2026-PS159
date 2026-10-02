@@ -1,7 +1,6 @@
 """
 Unit tests for certificate analyser.
 """
-import base64
 import pytest
 from datetime import datetime, timezone, timedelta
 

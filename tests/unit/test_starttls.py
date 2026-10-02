@@ -16,6 +16,24 @@ def _make_smtp_pkt(cmd=None, rsp_code=None, rsp_param=None, hs_type=None, pkt_nu
     return {"_source": {"layers": layers}}
 
 
+def _make_imap_pkt(req=None, rsp=None, hs_type=None, pkt_num=1):
+    layers = {}
+    if req: layers["imap.request"] = req
+    if rsp: layers["imap.response"] = rsp
+    if hs_type: layers["tls.handshake.type"] = hs_type
+    layers["frame.number"] = str(pkt_num)
+    return {"_source": {"layers": layers}}
+
+
+def _make_pop3_pkt(req=None, rsp=None, hs_type=None, pkt_num=1):
+    layers = {}
+    if req: layers["pop.request"] = req
+    if rsp: layers["pop.response"] = rsp
+    if hs_type: layers["tls.handshake.type"] = hs_type
+    layers["frame.number"] = str(pkt_num)
+    return {"_source": {"layers": layers}}
+
+
 class TestSMTPSTARTTLSMachine:
 
     def test_clean_starttls_negotiation(self):
@@ -112,3 +130,68 @@ class TestSTARTTLSEventLog:
         kinds = [e.kind for e in m.events]
         assert "advertised" in kinds
         assert "requested" in kinds
+
+
+class TestIMAPSTARTTLSMachine:
+
+    def test_clean_starttls_negotiation(self):
+        m = IMAPSTARTTLSMachine()
+        packets = [
+            _make_imap_pkt(rsp="* OK IMAP4rev1 Service Ready", pkt_num=1),
+            _make_imap_pkt(req="A001 CAPABILITY", pkt_num=2),
+            _make_imap_pkt(rsp="* CAPABILITY IMAP4rev1 STARTTLS", pkt_num=3),
+            _make_imap_pkt(req="A002 STARTTLS", pkt_num=4),
+            _make_imap_pkt(rsp="A002 OK Begin TLS negotiation now", pkt_num=5),
+            _make_imap_pkt(hs_type="1", pkt_num=6),
+        ]
+        for i, p in enumerate(packets):
+            m.process_packet(p, i + 1)
+
+        assert m.get_starttls_state() == STARTTLSState.NEGOTIATED
+        assert not m.cleartext_auth_detected
+
+    def test_cleartext_login_after_advertised(self):
+        m = IMAPSTARTTLSMachine()
+        packets = [
+            _make_imap_pkt(rsp="* OK IMAP4rev1 Service Ready", pkt_num=1),
+            _make_imap_pkt(rsp="* CAPABILITY IMAP4rev1 STARTTLS", pkt_num=2),
+            _make_imap_pkt(req="A001 LOGIN user pass", pkt_num=3),
+        ]
+        for i, p in enumerate(packets):
+            m.process_packet(p, i + 1)
+
+        assert m.get_starttls_state() == STARTTLSState.SUSPICIOUS_FALLBACK
+        assert m.cleartext_auth_detected
+
+
+class TestPOP3STARTTLSMachine:
+
+    def test_clean_stls_negotiation(self):
+        m = POP3STARTTLSMachine()
+        packets = [
+            _make_pop3_pkt(rsp="+OK POP3 server ready", pkt_num=1),
+            _make_pop3_pkt(req="CAPA", pkt_num=2),
+            _make_pop3_pkt(rsp="+OK Capability list follows\r\nSTLS", pkt_num=3),
+            _make_pop3_pkt(req="STLS", pkt_num=4),
+            _make_pop3_pkt(rsp="+OK Begin TLS negotiation", pkt_num=5),
+            _make_pop3_pkt(hs_type="1", pkt_num=6),
+        ]
+        for i, p in enumerate(packets):
+            m.process_packet(p, i + 1)
+
+        assert m.get_starttls_state() == STARTTLSState.NEGOTIATED
+        assert not m.cleartext_auth_detected
+
+    def test_cleartext_user_pass_after_advertised(self):
+        m = POP3STARTTLSMachine()
+        packets = [
+            _make_pop3_pkt(rsp="+OK POP3 server ready", pkt_num=1),
+            _make_pop3_pkt(rsp="+OK Capability: STLS", pkt_num=2),
+            _make_pop3_pkt(req="USER alice", pkt_num=3),
+        ]
+        for i, p in enumerate(packets):
+            m.process_packet(p, i + 1)
+
+        assert m.get_starttls_state() == STARTTLSState.SUSPICIOUS_FALLBACK
+        assert m.cleartext_auth_detected
+
