@@ -25,6 +25,7 @@ frontend/.vite/
 
 # Generated files
 demo_pcaps/_certs/
+online_pcaps/
 backend/anomaly/isolation_forest.pkl
 backend/anomaly/scaler.pkl
 reports/

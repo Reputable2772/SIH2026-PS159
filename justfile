@@ -50,6 +50,16 @@ gen-pcaps:
 
 # ─── Testing & Benchmarking ─────────────────────────────────────────────────
 
+# Run static analysis and lint checks
+lint:
+    ruff check .
+    cd {{FRONTEND_DIR}} && npm run build
+
+# Format python codebase
+format:
+    ruff format .
+    ruff check --fix .
+
 # Run unit + integration tests
 test:
     PYTHONPATH="." pytest tests/ -v --tb=short

@@ -39,10 +39,6 @@ dev = [
     "mypy>=1.14.0",
 ]
 
-[project.scripts]
-securemailscope = "backend.cli:main"
-
-
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["backend*"]
@@ -56,3 +52,29 @@ python_functions = ["test_*"]
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "SIM",    # flake8-simplify
+    "PIE",    # flake8-pie
+    "PERF",   # perflint
+    "RUF",    # ruff rules
+]
+ignore = [
+    "E501",   # line too long (handled by ruff format)
+    "B008",   # function-call-in-default-argument (FastAPI dependencies/tasks)
+    "PIE796", # non-unique-enums (intentional aliases)
+    "SIM102", # collapsible-if
+    "RUF001", # ambiguous-unicode-character-string (em-dash, arrows in docstrings/UI text)
+    "RUF002", # ambiguous-unicode-character-docstring
+    "RUF003", # ambiguous-unicode-character-comment
+    "RUF012", # mutable class attributes in Pydantic models
+    "UP042",  # str, enum.Enum vs StrEnum (kept for Pydantic v2 serialization compatibility)
+]
