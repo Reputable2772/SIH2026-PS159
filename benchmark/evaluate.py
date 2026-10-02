@@ -5,6 +5,7 @@ Measures detection accuracy against known-expectation test PCAPs.
 
 Output format suitable for screenshots and SIH PPT evidence.
 """
+
 from __future__ import annotations
 
 import json
@@ -89,6 +90,7 @@ EXPECTED_RESULTS = {
 # Evaluation Metrics
 # ---------------------------------------------------------------------------
 
+
 class Metrics:
     def __init__(self):
         self.tp = 0
@@ -114,7 +116,7 @@ def evaluate_all() -> dict:
     """Run evaluation against all available demo PCAPs."""
     if not DEMO_DIR.exists() or not list(DEMO_DIR.glob("*.pcap")):
         print("[ERROR] No demo PCAPs found.")
-        print(f"        Run: python scripts/generate_pcaps.py")
+        print("        Run: python scripts/generate_pcaps.py")
         sys.exit(1)
 
     pcaps = sorted(DEMO_DIR.glob("*.pcap"))
@@ -158,7 +160,7 @@ def evaluate_all() -> dict:
         total_high += result.risk_score.high_count
 
         # Collect actual finding categories
-        actual_cats = set(f.category.value for f in result.all_findings if not f.is_ml_finding)
+        actual_cats = {f.category.value for f in result.all_findings if not f.is_ml_finding}
         expected_cats = set(expected.get("expected_finding_categories", []))
 
         # Rule engine metrics
@@ -167,7 +169,6 @@ def evaluate_all() -> dict:
 
         if should_have_finding and has_finding:
             rule_metrics.tp += 1
-            hit_cats = actual_cats & expected_cats
             miss_cats = expected_cats - actual_cats
             print(f"    ✓ Rule findings: {actual_cats}")
             if miss_cats:
@@ -180,7 +181,7 @@ def evaluate_all() -> dict:
             print(f"    ✗ False positive findings: {actual_cats}")
         else:
             rule_metrics.tn += 1
-            print(f"    ✓ Correctly clean (no findings)")
+            print("    ✓ Correctly clean (no findings)")
 
         # ML anomaly metrics
         expected_anom = expected.get("anomalous", False)
@@ -195,26 +196,32 @@ def evaluate_all() -> dict:
             ml_metrics.tn += 1
 
         # TLS 1.3 cert observability check
-        tls13_sessions = [s for s in result.sessions
-                          if s.tls_handshake and
-                          s.tls_handshake.tls_version.value == "TLS 1.3"]
+        tls13_sessions = [
+            s
+            for s in result.sessions
+            if s.tls_handshake and s.tls_handshake.tls_version.value == "TLS 1.3"
+        ]
         for s in tls13_sessions:
             if s.tls_handshake and s.tls_handshake.cert_observability.value == "not_observable":
-                print(f"    ✓ TLS 1.3 cert limitation correctly reported")
+                print("    ✓ TLS 1.3 cert limitation correctly reported")
 
-        results.append({
-            "pcap": fname,
-            "sessions": sessions_n,
-            "risk_score": result.risk_score.score,
-            "risk_level": result.risk_score.level,
-            "rule_tp": rule_metrics.tp,
-            "actual_findings": list(actual_cats),
-            "expected_findings": list(expected_cats),
-            "anomalous": actual_anom,
-            "processing_time": round(elapsed, 3),
-        })
-        print(f"    Score: {result.risk_score.score}/100 ({result.risk_score.level})  "
-              f"Sessions: {sessions_n}  Time: {elapsed:.3f}s")
+        results.append(
+            {
+                "pcap": fname,
+                "sessions": sessions_n,
+                "risk_score": result.risk_score.score,
+                "risk_level": result.risk_score.level,
+                "rule_tp": rule_metrics.tp,
+                "actual_findings": list(actual_cats),
+                "expected_findings": list(expected_cats),
+                "anomalous": actual_anom,
+                "processing_time": round(elapsed, 3),
+            }
+        )
+        print(
+            f"    Score: {result.risk_score.score}/100 ({result.risk_score.level})  "
+            f"Sessions: {sessions_n}  Time: {elapsed:.3f}s"
+        )
         print()
 
     # ---------------------------------------------------------------------------
@@ -247,7 +254,7 @@ def evaluate_all() -> dict:
     print(f"  F1 Score             {ml_metrics.f1:.3f}")
     print()
     if pcaps_processed > 0:
-        print(f"Mean analysis time     {total_time/pcaps_processed:.3f}s")
+        print(f"Mean analysis time     {total_time / pcaps_processed:.3f}s")
     print(f"Total analysis time    {total_time:.3f}s")
     print("=" * 60)
     print()

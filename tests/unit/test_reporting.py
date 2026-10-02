@@ -1,6 +1,7 @@
 """
 Unit tests for Report Generation (JSON, HTML, PDF).
 """
+
 import json
 import tempfile
 from pathlib import Path
@@ -85,6 +86,7 @@ def sample_analysis_result() -> AnalysisResult:
 # JSON Report Tests
 # ---------------------------------------------------------------------------
 
+
 def test_generate_json_report(sample_analysis_result):
     report_dict = generate_json_report(sample_analysis_result)
 
@@ -104,6 +106,7 @@ def test_generate_json_report(sample_analysis_result):
 # HTML Report Tests
 # ---------------------------------------------------------------------------
 
+
 def test_generate_html_report(sample_analysis_result):
     html = generate_html_report(sample_analysis_result)
 
@@ -118,6 +121,7 @@ def test_generate_html_report(sample_analysis_result):
 # ---------------------------------------------------------------------------
 # PDF Report Tests
 # ---------------------------------------------------------------------------
+
 
 def test_generate_pdf_report(sample_analysis_result):
     pytest.importorskip("fpdf")

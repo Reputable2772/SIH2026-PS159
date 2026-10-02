@@ -1,9 +1,16 @@
 """
 Unit tests for ML anomaly detection feature extraction.
 """
-import numpy as np
-import pytest
 
+import numpy as np
+
+from backend.anomaly.detector import (
+    FEATURE_NAMES,
+    N_FEATURES,
+    TLSAnomalyDetector,
+    extract_features,
+    generate_synthetic_training_data,
+)
 from backend.models.session import (
     ApplicationProtocol,
     ForwardSecrecyStatus,
@@ -12,13 +19,6 @@ from backend.models.session import (
     TCPSession,
     TLSHandshake,
     TLSVersion,
-)
-from backend.anomaly.detector import (
-    FEATURE_NAMES,
-    N_FEATURES,
-    extract_features,
-    generate_synthetic_training_data,
-    TLSAnomalyDetector,
 )
 
 
@@ -33,8 +33,10 @@ def _make_session(
 ) -> TCPSession:
     s = TCPSession(
         session_id="test:1",
-        src_ip="1.2.3.4", src_port=12345,
-        dst_ip="5.6.7.8", dst_port=25,
+        src_ip="1.2.3.4",
+        src_port=12345,
+        dst_ip="5.6.7.8",
+        dst_port=25,
         protocol=protocol,
         starttls_state=starttls,
         cleartext_auth_detected=cleartext_auth,
@@ -53,7 +55,6 @@ def _make_session(
 
 
 class TestFeatureExtraction:
-
     def test_feature_vector_length(self):
         session = _make_session()
         features = extract_features(session)
@@ -97,7 +98,6 @@ class TestFeatureExtraction:
 
 
 class TestSyntheticData:
-
     def test_synthetic_data_shape(self):
         X = generate_synthetic_training_data(n_benign=100)
         assert X.shape == (100, N_FEATURES)
@@ -114,7 +114,6 @@ class TestSyntheticData:
 
 
 class TestAnomalyDetector:
-
     def test_train_and_score(self):
         det = TLSAnomalyDetector()
         det.train()
@@ -133,7 +132,7 @@ class TestAnomalyDetector:
             cipher="TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
             fs=ForwardSecrecyStatus.YES,
         )
-        score, is_anom, _ = det.score_session(session)
+        score, _, _ = det.score_session(session)
         # Normal sessions should have low anomaly scores
         assert score < 0.8  # Not extremely anomalous
 

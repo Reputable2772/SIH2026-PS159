@@ -1,41 +1,50 @@
 """
 Unit tests for STARTTLS state machine.
 """
-import pytest
-from backend.protocols.starttls import SMTPSTARTTLSMachine, IMAPSTARTTLSMachine, POP3STARTTLSMachine
+
 from backend.models.session import STARTTLSState
+from backend.protocols.starttls import IMAPSTARTTLSMachine, POP3STARTTLSMachine, SMTPSTARTTLSMachine
 
 
 def _make_smtp_pkt(cmd=None, rsp_code=None, rsp_param=None, hs_type=None, pkt_num=1):
     layers = {}
-    if cmd: layers["smtp.req.command"] = cmd
-    if rsp_code: layers["smtp.rsp.code"] = rsp_code
-    if rsp_param: layers["smtp.rsp.parameter"] = rsp_param
-    if hs_type: layers["tls.handshake.type"] = hs_type
+    if cmd:
+        layers["smtp.req.command"] = cmd
+    if rsp_code:
+        layers["smtp.rsp.code"] = rsp_code
+    if rsp_param:
+        layers["smtp.rsp.parameter"] = rsp_param
+    if hs_type:
+        layers["tls.handshake.type"] = hs_type
     layers["frame.number"] = str(pkt_num)
     return {"_source": {"layers": layers}}
 
 
 def _make_imap_pkt(req=None, rsp=None, hs_type=None, pkt_num=1):
     layers = {}
-    if req: layers["imap.request"] = req
-    if rsp: layers["imap.response"] = rsp
-    if hs_type: layers["tls.handshake.type"] = hs_type
+    if req:
+        layers["imap.request"] = req
+    if rsp:
+        layers["imap.response"] = rsp
+    if hs_type:
+        layers["tls.handshake.type"] = hs_type
     layers["frame.number"] = str(pkt_num)
     return {"_source": {"layers": layers}}
 
 
 def _make_pop3_pkt(req=None, rsp=None, hs_type=None, pkt_num=1):
     layers = {}
-    if req: layers["pop.request"] = req
-    if rsp: layers["pop.response"] = rsp
-    if hs_type: layers["tls.handshake.type"] = hs_type
+    if req:
+        layers["pop.request"] = req
+    if rsp:
+        layers["pop.response"] = rsp
+    if hs_type:
+        layers["tls.handshake.type"] = hs_type
     layers["frame.number"] = str(pkt_num)
     return {"_source": {"layers": layers}}
 
 
 class TestSMTPSTARTTLSMachine:
-
     def test_clean_starttls_negotiation(self):
         m = SMTPSTARTTLSMachine()
         packets = [
@@ -78,7 +87,7 @@ class TestSMTPSTARTTLSMachine:
             _make_smtp_pkt(rsp_code="250", rsp_param="STARTTLS", pkt_num=3),
             _make_smtp_pkt(cmd="STARTTLS", pkt_num=4),
             _make_smtp_pkt(rsp_code="454", pkt_num=5),  # Rejected
-            _make_smtp_pkt(cmd="MAIL", pkt_num=6),       # Continues plaintext
+            _make_smtp_pkt(cmd="MAIL", pkt_num=6),  # Continues plaintext
         ]
         for i, p in enumerate(packets):
             m.process_packet(p, i + 1)
@@ -115,7 +124,6 @@ class TestSMTPSTARTTLSMachine:
 
 
 class TestSTARTTLSEventLog:
-
     def test_events_recorded(self):
         m = SMTPSTARTTLSMachine()
         packets = [
@@ -133,7 +141,6 @@ class TestSTARTTLSEventLog:
 
 
 class TestIMAPSTARTTLSMachine:
-
     def test_clean_starttls_negotiation(self):
         m = IMAPSTARTTLSMachine()
         packets = [
@@ -165,7 +172,6 @@ class TestIMAPSTARTTLSMachine:
 
 
 class TestPOP3STARTTLSMachine:
-
     def test_clean_stls_negotiation(self):
         m = POP3STARTTLSMachine()
         packets = [
@@ -194,4 +200,3 @@ class TestPOP3STARTTLSMachine:
 
         assert m.get_starttls_state() == STARTTLSState.SUSPICIOUS_FALLBACK
         assert m.cleartext_auth_detected
-

@@ -1,8 +1,8 @@
 """
 Unit tests for certificate analyser.
 """
-import pytest
-from datetime import datetime, timezone, timedelta
+
+from datetime import UTC, datetime, timedelta
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
@@ -10,8 +10,8 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 from backend.certificates.analyser import (
-    parse_certificate_der,
     assess_cert_risk,
+    parse_certificate_der,
 )
 
 
@@ -24,7 +24,7 @@ def _make_cert_der(
     """Generate a minimal self-signed DER certificate for testing."""
     key = rsa.generate_private_key(public_exponent=65537, key_size=key_size)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if expired:
         not_before = now - timedelta(days=400)
         not_after = now - timedelta(days=35)  # expired 35 days ago
@@ -32,9 +32,11 @@ def _make_cert_der(
         not_before = now
         not_after = now + timedelta(days=days_valid)
 
-    subject = issuer = x509.Name([
-        x509.NameAttribute(NameOID.COMMON_NAME, cn),
-    ])
+    subject = issuer = x509.Name(
+        [
+            x509.NameAttribute(NameOID.COMMON_NAME, cn),
+        ]
+    )
 
     cert = (
         x509.CertificateBuilder()
@@ -54,7 +56,6 @@ def _make_cert_der(
 
 
 class TestCertificateParsing:
-
     def test_parse_valid_cert(self):
         der = _make_cert_der("valid.local")
         cert = parse_certificate_der(der)
@@ -91,7 +92,6 @@ class TestCertificateParsing:
 
 
 class TestCertificateRiskAssessment:
-
     def test_expired_is_critical(self):
         der = _make_cert_der("expired.local", expired=True)
         cert = parse_certificate_der(der)

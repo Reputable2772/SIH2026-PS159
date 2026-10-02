@@ -1,12 +1,12 @@
 """
 Unit tests for protocol identification.
 """
-import pytest
+
 from backend.protocols.identifier import (
-    identify_protocol_by_port,
-    identify_protocol_by_payload,
-    identify_protocol,
     ApplicationProtocol,
+    identify_protocol,
+    identify_protocol_by_payload,
+    identify_protocol_by_port,
 )
 
 

@@ -1,17 +1,7 @@
 """
 Unit tests for TLS analyser and risk scoring.
 """
-import pytest
-from backend.tls.analyser import (
-    parse_tls_version,
-    resolve_cipher_name,
-    is_weak_cipher,
-    assess_forward_secrecy,
-    get_key_exchange,
-    TLSVersion,
-    ForwardSecrecyStatus,
-)
-from backend.posture.scoring import compute_risk_score, _risk_level
+
 from backend.models.session import (
     ApplicationProtocol,
     Evidence,
@@ -21,11 +11,21 @@ from backend.models.session import (
     STARTTLSState,
     TCPSession,
 )
-
+from backend.posture.scoring import _risk_level, compute_risk_score
+from backend.tls.analyser import (
+    ForwardSecrecyStatus,
+    TLSVersion,
+    assess_forward_secrecy,
+    get_key_exchange,
+    is_weak_cipher,
+    parse_tls_version,
+    resolve_cipher_name,
+)
 
 # ---------------------------------------------------------------------------
 # TLS Version Parsing
 # ---------------------------------------------------------------------------
+
 
 class TestTLSVersionParsing:
     def test_tls_13_numeric(self):
@@ -57,6 +57,7 @@ class TestTLSVersionParsing:
 # Cipher Suite Analysis
 # ---------------------------------------------------------------------------
 
+
 class TestCipherSuiteAnalysis:
     def test_rc4_is_weak(self):
         assert is_weak_cipher("TLS_RSA_WITH_RC4_128_SHA")
@@ -84,6 +85,7 @@ class TestCipherSuiteAnalysis:
 # Forward Secrecy
 # ---------------------------------------------------------------------------
 
+
 class TestForwardSecrecy:
     def test_tls_13_always_fs(self):
         result = assess_forward_secrecy("TLS_AES_128_GCM_SHA256", TLSVersion.TLS_1_3)
@@ -106,9 +108,12 @@ class TestForwardSecrecy:
 # Key Exchange Extraction
 # ---------------------------------------------------------------------------
 
+
 class TestKeyExchange:
     def test_ecdhe(self):
-        assert get_key_exchange("TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384", TLSVersion.TLS_1_2) == "ECDHE"
+        assert (
+            get_key_exchange("TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384", TLSVersion.TLS_1_2) == "ECDHE"
+        )
 
     def test_dhe(self):
         assert get_key_exchange("TLS_DHE_RSA_WITH_AES_128_GCM_SHA256", TLSVersion.TLS_1_2) == "DHE"
@@ -125,24 +130,29 @@ class TestKeyExchange:
 # Risk Scoring
 # ---------------------------------------------------------------------------
 
+
 def _make_session(findings_severity: list[str]) -> TCPSession:
     s = TCPSession(
         session_id="test:1",
-        src_ip="1.2.3.4", src_port=12345,
-        dst_ip="5.6.7.8", dst_port=25,
+        src_ip="1.2.3.4",
+        src_port=12345,
+        dst_ip="5.6.7.8",
+        dst_port=25,
         protocol=ApplicationProtocol.SMTP,
         starttls_state=STARTTLSState.NO_TLS,
     )
     for sev in findings_severity:
-        s.findings.append(Finding(
-            id="test-id",
-            severity=FindingSeverity(sev),
-            category=FindingCategory.WEAK_CIPHER,
-            title="Test finding",
-            description="desc",
-            evidence=Evidence(pcap_file="test.pcap", session_id="test:1"),
-            recommendation="Fix it",
-        ))
+        s.findings.append(
+            Finding(
+                id="test-id",
+                severity=FindingSeverity(sev),
+                category=FindingCategory.WEAK_CIPHER,
+                title="Test finding",
+                description="desc",
+                evidence=Evidence(pcap_file="test.pcap", session_id="test:1"),
+                recommendation="Fix it",
+            )
+        )
     return s
 
 

@@ -1,7 +1,7 @@
 """
 Unit tests for Risk Scoring Engine and Posture Evaluation.
 """
-import pytest
+
 from backend.models.session import (
     ApplicationProtocol,
     Evidence,
@@ -70,6 +70,7 @@ def _make_finding(
 # Scoring Unit Tests
 # ---------------------------------------------------------------------------
 
+
 def test_clean_session_score():
     """A session with no findings should have a score of 100 and MINIMAL risk."""
     sess = _make_dummy_session()
@@ -94,9 +95,9 @@ def test_multiple_deductions_cumulative():
     """Cumulative deductions for mixed severities."""
     findings = [
         _make_finding(FindingSeverity.CRITICAL),  # -25
-        _make_finding(FindingSeverity.HIGH),      # -15
-        _make_finding(FindingSeverity.MEDIUM),    # -7
-        _make_finding(FindingSeverity.LOW),       # -2
+        _make_finding(FindingSeverity.HIGH),  # -15
+        _make_finding(FindingSeverity.MEDIUM),  # -7
+        _make_finding(FindingSeverity.LOW),  # -2
     ]
     sess = _make_dummy_session(findings=findings)
     result = compute_risk_score([sess])
@@ -175,6 +176,7 @@ def test_generate_recommendations_deduplication():
 # Posture Engine Tests
 # ---------------------------------------------------------------------------
 
+
 def test_posture_engine_weak_cipher_detection():
     engine = PostureRuleEngine()
     sess = _make_dummy_session()
@@ -197,4 +199,3 @@ def test_posture_engine_cleartext_traffic():
     engine.evaluate(sess)
     no_tls_findings = [f for f in sess.findings if f.category == FindingCategory.STARTTLS]
     assert len(no_tls_findings) >= 1
-

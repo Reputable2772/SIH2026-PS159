@@ -1,11 +1,13 @@
 """
 Unit tests for FastAPI REST API endpoints.
 """
+
 import io
+
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.api.main import app, _analyses, _analysis_status
+from backend.api.main import _analyses, _analysis_status, app
 from backend.models.session import (
     AnalysisResult,
     ApplicationProtocol,
