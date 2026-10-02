@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +27,7 @@ def generate_json_report(result: AnalysisResult) -> dict[str, Any]:
     """Generate a machine-readable JSON report."""
     data = result.model_dump(mode="json")
     data["report_metadata"] = {
-        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "tool": "SecureMailScope",
         "version": "0.1.0",
         "disclaimer": (
@@ -265,13 +265,29 @@ def generate_html_report(result: AnalysisResult) -> str:
     return template.render(
         result=result,
         score_color=score_color,
-        now=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
+        now=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
     )
 
 
 # ---------------------------------------------------------------------------
 # PDF Report
 # ---------------------------------------------------------------------------
+
+def _latin1_safe(s: str) -> str:
+    """Sanitize strings for built-in PDF Helvetica font (latin-1 only)."""
+    return (
+        s.replace("—", "--")
+        .replace("–", "-")
+        .replace("’", "'")
+        .replace("‘", "'")
+        .replace("“", '"')
+        .replace("”", '"')
+        .replace("…", "...")
+        .replace("•", "*")
+        .encode("latin-1", "replace")
+        .decode("latin-1")
+    )
+
 
 def generate_pdf_report(result: AnalysisResult, output_path: str) -> str:
     """Generate a PDF forensic report using fpdf2."""
@@ -288,20 +304,20 @@ def generate_pdf_report(result: AnalysisResult, output_path: str) -> str:
     # Title
     pdf.set_font("Helvetica", "B", 20)
     pdf.set_text_color(88, 166, 255)
-    pdf.cell(0, 10, "SecureMailScope Forensic Report", ln=True)
+    pdf.cell(0, 10, "SecureMailScope Forensic Report", new_x="LMARGIN", new_y="NEXT")
 
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(139, 148, 158)
-    pdf.cell(0, 5, f"File: {result.capture.pcap_filename}", ln=True)
-    pdf.cell(0, 5, f"SHA-256: {result.capture.sha256_hash}", ln=True)
-    pdf.cell(0, 5, f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}", ln=True)
-    pdf.cell(0, 5, "SecureMailScope v0.1.0 — SIH 2026 Prototype (PS 26159)", ln=True)
+    pdf.cell(0, 5, _latin1_safe(f"File: {result.capture.pcap_filename}"), new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 5, _latin1_safe(f"SHA-256: {result.capture.sha256_hash}"), new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 5, _latin1_safe(f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"), new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 5, _latin1_safe("SecureMailScope v0.1.0 -- SIH 2026 Prototype (PS 26159)"), new_x="LMARGIN", new_y="NEXT")
     pdf.ln(5)
 
     # Score
     pdf.set_font("Helvetica", "B", 14)
     pdf.set_text_color(230, 237, 243)
-    pdf.cell(0, 8, "Composite Risk Score (Prototype Methodology)", ln=True)
+    pdf.cell(0, 8, "Composite Risk Score (Prototype Methodology)", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "B", 36)
     score = result.risk_score.score
     if score >= 70:
@@ -310,24 +326,24 @@ def generate_pdf_report(result: AnalysisResult, output_path: str) -> str:
         pdf.set_text_color(240, 136, 62)
     else:
         pdf.set_text_color(218, 54, 51)
-    pdf.cell(0, 14, f"{score} / 100  ({result.risk_score.level} RISK)", ln=True)
+    pdf.cell(0, 14, _latin1_safe(f"{score} / 100  ({result.risk_score.level} RISK)"), new_x="LMARGIN", new_y="NEXT")
     pdf.set_text_color(139, 148, 158)
     pdf.set_font("Helvetica", "I", 8)
-    pdf.cell(0, 5, "NOT an official NIST/BIS/NTRO score — prototype methodology only.", ln=True)
+    pdf.cell(0, 5, _latin1_safe("NOT an official NIST/BIS/NTRO score -- prototype methodology only."), new_x="LMARGIN", new_y="NEXT")
     pdf.ln(4)
 
     # Finding counts
     pdf.set_font("Helvetica", "B", 11)
     pdf.set_text_color(230, 237, 243)
-    pdf.cell(0, 7, "Finding Summary", ln=True)
+    pdf.cell(0, 7, "Finding Summary", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 10)
     rs = result.risk_score
-    pdf.cell(0, 6, f"Critical: {rs.critical_count}  |  High: {rs.high_count}  |  Medium: {rs.medium_count}  |  Low: {rs.low_count}  |  ML Anomalies: {rs.ml_anomaly_count}", ln=True)
+    pdf.cell(0, 6, _latin1_safe(f"Critical: {rs.critical_count}  |  High: {rs.high_count}  |  Medium: {rs.medium_count}  |  Low: {rs.low_count}  |  ML Anomalies: {rs.ml_anomaly_count}"), new_x="LMARGIN", new_y="NEXT")
     pdf.ln(4)
 
     # Capture metadata
     pdf.set_font("Helvetica", "B", 11)
-    pdf.cell(0, 7, "Capture Metadata", ln=True)
+    pdf.cell(0, 7, "Capture Metadata", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(139, 148, 158)
     rows = [
@@ -339,16 +355,16 @@ def generate_pdf_report(result: AnalysisResult, output_path: str) -> str:
         ("Processing time", f"{result.processing_time_seconds:.3f}s"),
     ]
     for k, v in rows:
-        pdf.cell(50, 5, k, border=0)
+        pdf.cell(50, 5, _latin1_safe(k), border=0)
         pdf.set_text_color(230, 237, 243)
-        pdf.cell(0, 5, v, ln=True)
+        pdf.cell(0, 5, _latin1_safe(v), new_x="LMARGIN", new_y="NEXT")
         pdf.set_text_color(139, 148, 158)
     pdf.ln(4)
 
     # Findings
     pdf.set_font("Helvetica", "B", 11)
     pdf.set_text_color(230, 237, 243)
-    pdf.cell(0, 7, "Security Findings", ln=True)
+    pdf.cell(0, 7, "Security Findings", new_x="LMARGIN", new_y="NEXT")
 
     sev_colors = {
         "critical": (218, 54, 51),
@@ -362,51 +378,51 @@ def generate_pdf_report(result: AnalysisResult, output_path: str) -> str:
         pdf.set_text_color(*c)
         pdf.set_font("Helvetica", "B", 9)
         label = f"[{finding.severity.value.upper()}{'  ML' if finding.is_ml_finding else ''}] {finding.title}"
-        pdf.multi_cell(0, 5, label[:120])
+        pdf.multi_cell(0, 5, _latin1_safe(label[:120]), new_x="LMARGIN", new_y="NEXT")
         pdf.set_text_color(139, 148, 158)
         pdf.set_font("Helvetica", "", 8)
         desc = finding.description[:300].replace("\n", " ")
-        pdf.multi_cell(0, 4, desc)
+        pdf.multi_cell(0, 4, _latin1_safe(desc), new_x="LMARGIN", new_y="NEXT")
         pdf.set_text_color(46, 160, 67)
         rec = finding.recommendation[:200].replace("\n", " ")
-        pdf.multi_cell(0, 4, f"Rec: {rec}")
+        pdf.multi_cell(0, 4, _latin1_safe(f"Rec: {rec}"), new_x="LMARGIN", new_y="NEXT")
         pdf.ln(2)
 
     # Recommendations
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 11)
     pdf.set_text_color(230, 237, 243)
-    pdf.cell(0, 7, "Recommendations", ln=True)
+    pdf.cell(0, 7, "Recommendations", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(121, 224, 154)
     for i, rec in enumerate(result.recommendations, 1):
-        pdf.multi_cell(0, 5, f"{i}. {rec}")
+        pdf.multi_cell(0, 5, _latin1_safe(f"{i}. {rec}"), new_x="LMARGIN", new_y="NEXT")
         pdf.ln(1)
 
     # Limitations
     pdf.ln(4)
     pdf.set_font("Helvetica", "B", 11)
     pdf.set_text_color(230, 237, 243)
-    pdf.cell(0, 7, "Limitations", ln=True)
+    pdf.cell(0, 7, "Limitations", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "I", 8)
     pdf.set_text_color(212, 177, 47)
     for lim in result.limitations:
-        pdf.multi_cell(0, 4, lim[:400])
+        pdf.multi_cell(0, 4, _latin1_safe(lim[:400]), new_x="LMARGIN", new_y="NEXT")
         pdf.ln(2)
 
     # TLS 1.3 note
     pdf.ln(4)
     pdf.set_font("Helvetica", "B", 9)
     pdf.set_text_color(121, 192, 255)
-    pdf.cell(0, 6, "TLS 1.3 Certificate Observability Limitation", ln=True)
+    pdf.cell(0, 6, "TLS 1.3 Certificate Observability Limitation", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "I", 8)
-    pdf.multi_cell(0, 4,
+    pdf.multi_cell(0, 4, _latin1_safe(
         "In TLS 1.3 (RFC 8446), the Certificate message is encrypted during the handshake. "
         "Passive PCAP analysis without session keys (SSLKEYLOGFILE) cannot extract server X.509 "
         "certificates from TLS 1.3 sessions. This report correctly identifies this limitation "
         "rather than fabricating certificate information. TLS version and cipher suite remain "
         "observable from the unencrypted ClientHello/ServerHello messages."
-    )
+    ), new_x="LMARGIN", new_y="NEXT")
 
     pdf.output(output_path)
     return output_path
