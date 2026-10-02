@@ -2,8 +2,8 @@
   description = "SecureMailScope — AI-Assisted Cryptographic Security Posture Assessment for Secure Email Communications";
 
   inputs = {
-    nixpkgs.url = "flake:nixpkgs";
-    flake-parts.url = "flake:flake-parts";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    flake-parts.url = "github:hercules-ci/flake-parts";
   };
 
   outputs = inputs @ { flake-parts, nixpkgs, ... }:
@@ -22,6 +22,8 @@
             pkgs.python312Packages.virtualenv
             pkgs.python312Packages.setuptools
             pkgs.python312Packages.wheel
+            pkgs.stdenv.cc.cc.lib
+            pkgs.zlib
 
             # Network capture & analysis
             pkgs.wireshark       # provides tshark, capinfos, dumpcap
@@ -43,6 +45,8 @@
           ];
 
           shellHook = ''
+            export LD_LIBRARY_PATH="${lib.makeLibraryPath [ pkgs.stdenv.cc.cc.lib pkgs.zlib ]}:''${LD_LIBRARY_PATH:-}"
+
             if [ ! -d ".venv" ]; then
               echo "  Creating .venv..."
               python -m venv .venv
