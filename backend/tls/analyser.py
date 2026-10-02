@@ -6,7 +6,6 @@ from tshark-decoded packet data.
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any, Optional
 
 from backend.models.session import (

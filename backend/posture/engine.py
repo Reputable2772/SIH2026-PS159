@@ -22,7 +22,7 @@ from backend.models.session import (
     TCPSession,
     TLSVersion,
 )
-from backend.tls.analyser import WEAK_CIPHERS, is_weak_cipher
+from backend.tls.analyser import is_weak_cipher
 
 logger = logging.getLogger(__name__)
 

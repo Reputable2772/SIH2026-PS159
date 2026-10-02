@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import enum
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from backend.models.session import ApplicationProtocol, STARTTLSState

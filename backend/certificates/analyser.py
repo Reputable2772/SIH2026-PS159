@@ -11,9 +11,8 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from cryptography import x509
-from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import (
-    dh,
     dsa,
     ec,
     ed25519,

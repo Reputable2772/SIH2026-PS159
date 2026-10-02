@@ -18,7 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from backend.pcap.pipeline import analyse_pcap
-from backend.reporting.generator import generate_html_report, generate_json_report, generate_pdf_report
+from backend.reporting.generator import generate_pdf_report
 
 DEMO_DIR = Path(__file__).parent.parent / "demo_pcaps"
 REPORTS_DIR = Path(__file__).parent.parent / "reports"

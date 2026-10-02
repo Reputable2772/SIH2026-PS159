@@ -6,16 +6,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from backend.models.session import AnalysisResult

@@ -5,13 +5,10 @@ No encrypted payload contents are processed.
 """
 from __future__ import annotations
 
-import json
 import logging
-import os
 import uuid
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -71,14 +68,11 @@ def extract_features(session) -> np.ndarray:
     This is the ONLY input to the ML model — no payload bytes.
     """
     from backend.models.session import (
-        ApplicationProtocol,
         ForwardSecrecyStatus,
         ObservabilityStatus,
-        STARTTLSState,
         TLSVersion,
     )
     from backend.tls.analyser import WEAK_CIPHERS
-    from backend.certificates.analyser import WEAK_SIGNATURE_ALGORITHMS
 
     features = np.zeros(N_FEATURES, dtype=np.float32)
 

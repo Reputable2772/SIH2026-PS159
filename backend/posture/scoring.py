@@ -5,7 +5,6 @@ Deterministic composite risk score — NOT an official NIST/BIS/NTRO score.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from backend.models.session import Finding, FindingSeverity, RiskScore, TCPSession
 

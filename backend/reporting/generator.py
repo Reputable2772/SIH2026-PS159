@@ -4,15 +4,14 @@ Produces JSON, HTML, and PDF forensic reports.
 """
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from jinja2 import Environment, FileSystemLoader, select_autoescape
+from jinja2 import Environment
 
-from backend.models.session import AnalysisResult, FindingSeverity
+from backend.models.session import AnalysisResult
 
 logger = logging.getLogger(__name__)
 
@@ -243,8 +242,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
 def generate_html_report(result: AnalysisResult) -> str:
     """Generate an HTML forensic report."""
-    from jinja2 import Environment
-
     score = result.risk_score.score
     if score >= 85:
         score_color = "#2ea043"

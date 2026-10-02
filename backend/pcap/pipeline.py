@@ -49,10 +49,7 @@ from backend.protocols.identifier import (
     identify_protocol_by_port,
 )
 from backend.protocols.starttls import make_starttls_machine
-from backend.tls.analyser import (
-    extract_tls_handshake,
-    parse_tls_version,
-)
+from backend.tls.analyser import extract_tls_handshake
 
 logger = logging.getLogger(__name__)
 
