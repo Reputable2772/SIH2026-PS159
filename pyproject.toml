@@ -1,0 +1,58 @@
+[project]
+name = "securemailscope"
+version = "0.1.0"
+description = "AI-Assisted Cryptographic Security Posture Assessment for Secure Email Communications"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "SecureMailScope Team", email = "team@securemailscope.local" }
+]
+keywords = ["security", "tls", "email", "smtp", "pcap", "forensics"]
+
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "python-multipart>=0.0.12",
+    "httpx>=0.28.0",
+    "dpkt>=1.9.8",
+    "scapy>=2.6.0",
+    "pyshark>=0.6",
+    "cryptography>=44.0.0",
+    "pyOpenSSL>=24.3.0",
+    "scikit-learn>=1.6.0",
+    "numpy>=2.2.0",
+    "jinja2>=3.1.0",
+    "pydantic>=2.10.0",
+    "python-dateutil>=2.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.9.0",
+    "mypy>=1.14.0",
+]
+
+[project.scripts]
+securemailscope = "backend.cli:main"
+
+[build-system]
+requires = ["setuptools>=75.0", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["backend*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100

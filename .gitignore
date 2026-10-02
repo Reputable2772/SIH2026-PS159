@@ -1,0 +1,53 @@
+.direnv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Nix
+result
+result-*
+
+# Python virtual envs
+.venv/
+venv/
+env/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Generated files
+demo_pcaps/_certs/
+backend/anomaly/isolation_forest.pkl
+backend/anomaly/scaler.pkl
+reports/
+benchmark/benchmark_results.json
+
+# Temp uploads
+/tmp/securemailscope*/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Evidence (screenshots are committed; large files excluded)
+evidence/screenshots/*.png
+evidence/screenshots/*.webp
+
+# Secrets / keys (demo certs are OK but not private keys from production)
+*.pem
