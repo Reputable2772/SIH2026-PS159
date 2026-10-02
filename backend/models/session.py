@@ -5,10 +5,10 @@ All data flowing through the pipeline is typed with Pydantic models.
 from __future__ import annotations
 
 import enum
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -35,6 +35,7 @@ class TLSVersion(str, enum.Enum):
 class STARTTLSState(str, enum.Enum):
     """STARTTLS negotiation state machine states."""
     NO_TLS = "no_tls"                          # Plaintext only
+    NONE = "no_tls"                            # Alias for NO_TLS
     ADVERTISED = "advertised"                   # Server advertised STARTTLS
     REQUESTED = "requested"                     # Client sent STARTTLS command
     NEGOTIATED = "negotiated"                   # TLS handshake completed
@@ -65,6 +66,10 @@ class FindingCategory(str, enum.Enum):
     CONFIGURATION = "configuration"
     INFO = "info"
 
+    # Aliases
+    CIPHER_SUITE = "weak_cipher"
+    STARTTLS = "starttls_anomaly"
+
 
 class ForwardSecrecyStatus(str, enum.Enum):
     YES = "yes"                    # Forward secrecy confirmed
@@ -85,7 +90,7 @@ class ObservabilityStatus(str, enum.Enum):
 
 class Evidence(BaseModel):
     """Traceable evidence for a finding — answers 'why did we flag this?'"""
-    pcap_file: str
+    pcap_file: str = ""
     session_id: str
     packet_numbers: list[int] = Field(default_factory=list)
     field: Optional[str] = None
@@ -179,6 +184,21 @@ class TLSHandshake(BaseModel):
     client_hello_pkt: Optional[int] = None
     server_hello_pkt: Optional[int] = None
     handshake_complete: bool = False
+    cipher_suite_name: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _sync_cipher_suite_fields(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "cipher_suite_name" in data and "cipher_suite" not in data:
+                data["cipher_suite"] = data["cipher_suite_name"]
+            elif "cipher_suite" in data and "cipher_suite_name" not in data:
+                data["cipher_suite_name"] = data["cipher_suite"]
+        return data
+
+
+# Alias for backward compatibility / alternate naming
+TLSHandshakeInfo = TLSHandshake
 
 
 # ---------------------------------------------------------------------------
@@ -230,16 +250,27 @@ class TCPSession(BaseModel):
 # ---------------------------------------------------------------------------
 
 class CaptureMetadata(BaseModel):
-    pcap_path: str
-    pcap_filename: str
-    sha256_hash: str
-    file_size_bytes: int
+    pcap_path: str = ""
+    pcap_filename: str = ""
+    sha256_hash: str = ""
+    file_size_bytes: int = 0
     capture_duration_seconds: Optional[float] = None
+    duration_seconds: Optional[float] = None
     packet_count: int = 0
     first_packet_time: Optional[float] = None
     last_packet_time: Optional[float] = None
-    analyzed_at: datetime = Field(default_factory=datetime.utcnow)
+    analyzed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     tool_version: str = "0.1.0"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _sync_duration_fields(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "duration_seconds" in data and "capture_duration_seconds" not in data:
+                data["capture_duration_seconds"] = data["duration_seconds"]
+            elif "capture_duration_seconds" in data and "duration_seconds" not in data:
+                data["duration_seconds"] = data["capture_duration_seconds"]
+        return data
 
 
 class RiskScore(BaseModel):
@@ -274,10 +305,10 @@ class AnalysisResult(BaseModel):
     """Top-level result of a PCAP analysis run."""
     analysis_id: str
     capture: CaptureMetadata
-    sessions: list[TCPSession]
+    sessions: list[TCPSession] = Field(default_factory=list)
     risk_score: RiskScore
-    protocol_summary: ProtocolSummary
-    all_findings: list[Finding]
-    recommendations: list[str]
-    limitations: list[str]
+    protocol_summary: ProtocolSummary = Field(default_factory=ProtocolSummary)
+    all_findings: list[Finding] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
     processing_time_seconds: float = 0.0
