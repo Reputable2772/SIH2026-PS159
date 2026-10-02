@@ -314,7 +314,7 @@ def evaluate_no_tls(session: TCPSession) -> list[Finding]:
     ):
         findings.append(_make_finding(
             severity=FindingSeverity.HIGH,
-            category=FindingCategory.CONFIGURATION,
+            category=FindingCategory.STARTTLS_ANOMALY,
             title=f"No TLS: {session.protocol.value} session transmitted entirely in plaintext",
             description=(
                 f"The {session.protocol.value} session between "
