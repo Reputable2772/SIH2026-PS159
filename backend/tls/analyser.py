@@ -255,8 +255,14 @@ def extract_tls_handshake(stream_packets: list[dict[str, Any]]) -> Optional[TLSH
             continue
 
         has_tls = True
+        if isinstance(hs_type, list):
+            hs_types = [str(x) for x in hs_type]
+        elif hs_type is not None:
+            hs_types = [str(hs_type)]
+        else:
+            hs_types = []
 
-        if hs_type == "1":  # ClientHello
+        if "1" in hs_types:  # ClientHello
             client_hello_seen = True
             handshake.client_hello_pkt = pkt_num
 
@@ -288,7 +294,7 @@ def extract_tls_handshake(stream_packets: list[dict[str, Any]]) -> Optional[TLSH
                 else:
                     supported_versions = [str(sv)]
 
-        elif hs_type == "2":  # ServerHello
+        if "2" in hs_types:  # ServerHello
             server_hello_seen = True
             handshake.server_hello_pkt = pkt_num
 
@@ -319,11 +325,7 @@ def extract_tls_handshake(stream_packets: list[dict[str, Any]]) -> Optional[TLSH
             else:
                 handshake.tls_version = parse_tls_version(raw_ver)
 
-        elif hs_type == "11":  # Certificate
-            handshake.handshake_complete = True
-            # Certificate extraction is handled by the certificate module
-
-        elif hs_type == "20":  # Finished
+        if "11" in hs_types or "20" in hs_types:  # Certificate or Finished
             handshake.handshake_complete = True
 
         # JA3 from tshark if available
