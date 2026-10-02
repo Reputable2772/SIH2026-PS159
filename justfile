@@ -30,6 +30,16 @@ dev:
     @echo "Start frontend: just frontend"
     @echo "Or run both:    just backend & just frontend"
 
+# ─── Containerization (Podman) ───────────────────────────────────────────────
+
+# Build and start services using podman-compose
+compose-up:
+    podman-compose up -d --build
+
+# Stop container services
+compose-down:
+    podman-compose down
+
 # ─── Data Generation ────────────────────────────────────────────────────────
 
 # Generate synthetic test PCAPs (requires tshark + openssl in PATH)
