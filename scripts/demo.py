@@ -8,6 +8,7 @@ Runs the full demonstration pipeline:
 4. Generate a PDF report
 5. Print benchmark metrics
 """
+
 from __future__ import annotations
 
 import json
@@ -34,7 +35,7 @@ def banner(text: str, width: int = 60) -> None:
 def section(text: str) -> None:
     print(f"\n{'─' * 60}")
     print(f"  {text}")
-    print('─' * 60)
+    print("─" * 60)
 
 
 def demo():
@@ -48,6 +49,7 @@ def demo():
     if not pcaps:
         print("[!] No demo PCAPs found. Generating...")
         import subprocess
+
         result = subprocess.run(
             [sys.executable, str(SCRIPTS_DIR / "generate_pcaps.py")],
             cwd=str(SCRIPTS_DIR.parent),
@@ -80,7 +82,13 @@ def demo():
             highs = result.risk_score.high_count
             sessions = len(result.sessions)
 
-            level_icon = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "🟡", "LOW": "🔵", "MINIMAL": "🟢"}.get(level, "⚪")
+            level_icon = {
+                "CRITICAL": "🔴",
+                "HIGH": "🟠",
+                "MEDIUM": "🟡",
+                "LOW": "🔵",
+                "MINIMAL": "🟢",
+            }.get(level, "⚪")
 
             print(f"     {level_icon} Risk Score: {score}/100 ({level})")
             print(f"     Sessions: {sessions}  Critical: {crits}  High: {highs}")
@@ -97,9 +105,12 @@ def demo():
 
             # TLS 1.3 limitation note
             for s in result.sessions:
-                if (s.tls_handshake and s.tls_handshake.tls_version.value == "TLS 1.3"
-                        and s.tls_handshake.cert_observability.value == "not_observable"):
-                    print(f"     ℹ TLS 1.3: Certificate not observable (correct passive behaviour)")
+                if (
+                    s.tls_handshake
+                    and s.tls_handshake.tls_version.value == "TLS 1.3"
+                    and s.tls_handshake.cert_observability.value == "not_observable"
+                ):
+                    print("     ℹ TLS 1.3: Certificate not observable (correct passive behaviour)")
                     break
 
             # ML anomalies
@@ -113,6 +124,7 @@ def demo():
         except Exception as exc:
             print(f"     [ERROR] {exc}")
             import traceback
+
             traceback.print_exc()
 
     # ── Summary ──────────────────────────────────────────────────────────────
@@ -136,8 +148,10 @@ def demo():
         name = r.capture.pcap_filename
         score = r.risk_score.score
         level = r.risk_score.level
-        icon = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "🟡", "LOW": "🔵", "MINIMAL": "🟢"}.get(level, "⚪")
-        cats = list(set(f.category.value for f in r.all_findings))
+        icon = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "🟡", "LOW": "🔵", "MINIMAL": "🟢"}.get(
+            level, "⚪"
+        )
+        cats = list({f.category.value for f in r.all_findings})
         anom = any(s.is_anomalous for s in r.sessions)
         print(f"  {icon} {name:<35} {score:>5}/100  {level:<8}  {'ML⚠' if anom else ''}")
         if cats:
