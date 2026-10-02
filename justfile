@@ -69,31 +69,13 @@ demo:
 
 # Analyse a PCAP and generate all reports
 analyse pcap:
-    PYTHONPATH="." {{PYTHON}} -c "
-from backend.pcap.pipeline import analyse_pcap
-from backend.reporting.generator import generate_json_report, generate_html_report, generate_pdf_report
-import json, pathlib
-r = analyse_pcap('{{pcap}}')
-pathlib.Path('reports').mkdir(exist_ok=True)
-with open('reports/report.json','w') as f: json.dump(generate_json_report(r), f, indent=2)
-with open('reports/report.html','w') as f: f.write(generate_html_report(r))
-generate_pdf_report(r, 'reports/report.pdf')
-print(f'Reports saved to reports/')
-print(f'Score: {r.risk_score.score}/100 ({r.risk_score.level})')
-print(f'Findings: {len(r.all_findings)}')
-"
+    PYTHONPATH="." {{PYTHON}} -c "import json, pathlib; from backend.pcap.pipeline import analyse_pcap; from backend.reporting.generator import generate_json_report, generate_html_report, generate_pdf_report; r = analyse_pcap('{{pcap}}'); pathlib.Path('reports').mkdir(exist_ok=True); open('reports/report.json','w').write(json.dumps(generate_json_report(r), indent=2)); open('reports/report.html','w').write(generate_html_report(r)); generate_pdf_report(r, 'reports/report.pdf'); print('Reports saved to reports/'); print(f'Score: {r.risk_score.score}/100 ({r.risk_score.level})'); print(f'Findings: {len(r.all_findings)}')"
 
 # ─── ML Model ───────────────────────────────────────────────────────────────
 
 # Pre-train and save the anomaly detection model
 train-model:
-    PYTHONPATH="." {{PYTHON}} -c "
-from backend.anomaly.detector import TLSAnomalyDetector
-det = TLSAnomalyDetector()
-det.train()
-det.save()
-print('Anomaly model trained and saved.')
-"
+    PYTHONPATH="." {{PYTHON}} -c "from backend.anomaly.detector import TLSAnomalyDetector; det = TLSAnomalyDetector(); det.train(); det.save(); print('Anomaly model trained and saved.')"
 
 # ─── Frontend Build ──────────────────────────────────────────────────────────
 
