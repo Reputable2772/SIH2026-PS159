@@ -113,6 +113,13 @@ def extract_features(session) -> np.ndarray:
 
         # Key exchange
         kex = (hs.key_exchange or "").upper()
+        if not kex and cipher:
+            if "ECDHE" in cipher:
+                kex = "ECDHE"
+            elif "DHE" in cipher or "EDH" in cipher:
+                kex = "DHE"
+            elif "RSA" in cipher:
+                kex = "RSA"
         if "ECDHE" in kex:
             features[2] = 3.0
         elif "DHE" in kex or "EDH" in kex:
@@ -199,13 +206,13 @@ def generate_synthetic_training_data(n_benign: int = 500, seed: int = 42) -> np.
         cert_obs = 1.0 if tls_ver == 12.0 else 0.0  # TLS1.3 → not observable
         cert_expired = 0.0
         cert_self_signed = 0.0
-        cert_key_norm = rng.uniform(0.5, 1.0)   # 2048–4096 bits
+        cert_key_norm = rng.uniform(0.5, 1.0) if (cert_obs and rng.random() > 0.3) else 0.0
         sig_weak = 0.0
         starttls = rng.choice([1.0, 2.0], p=[0.4, 0.6])
         cleartext = 0.0
         proto = rng.choice([1.0, 2.0, 3.0], p=[0.5, 0.3, 0.2])
-        cipher_count = rng.uniform(0.3, 0.8)    # 15–40 ciphers
-        ext_count = rng.uniform(0.3, 0.7)
+        cipher_count = rng.uniform(0.05, 0.8)
+        ext_count = rng.uniform(0.05, 0.7)
         duration = rng.uniform(0.0, 0.3)
         pkt_count = rng.uniform(0.05, 0.5)
 
@@ -312,14 +319,12 @@ class TLSAnomalyDetector:
         X = features.reshape(1, -1)
         X_scaled = self._scaler.transform(X)
 
-        # Isolation Forest: score_samples returns negative anomaly scores
-        # More negative = more anomalous
-        raw_score = self._model.score_samples(X_scaled)[0]
-        is_anomalous = self._model.predict(X_scaled)[0] == -1
+        # Isolation Forest: decision_function > 0 for inliers, < 0 for anomalies
+        dec = float(self._model.decision_function(X_scaled)[0])
+        is_anomalous = bool(self._model.predict(X_scaled)[0] == -1)
 
-        # Normalize to [0, 1]: typical range is [-0.7, -0.1]
-        # -0.1 → normal (low anomaly), -0.7 → anomalous (high anomaly)
-        normalized = float(np.clip((-raw_score - 0.1) / 0.6, 0.0, 1.0))
+        # Normalize to [0, 1]: dec >= 0.25 -> ~0.0 (normal), dec <= -0.25 -> ~1.0 (anomalous)
+        normalized = float(np.clip(0.5 - (dec / 0.5), 0.0, 1.0))
 
         feature_dict = {
             name: float(val)
