@@ -81,7 +81,7 @@ TSHARK_FIELDS = [
     "x509sat.uTF8String",
     # SMTP
     "smtp.req.command",
-    "smtp.rsp.code",
+    "smtp.response.code",
     "smtp.rsp.parameter",
     "smtp.req.parameter",
     # IMAP
@@ -116,6 +116,8 @@ def run_tshark(
         "-T", "json",
         "--no-duplicate-keys",
     ]
+    for f in fields:
+        cmd += ["-e", f]
     if extra_filters:
         cmd += ["-Y", extra_filters]
 
@@ -140,23 +142,46 @@ def run_tshark(
         except Exception:
             return []
 
+    # Normalize layers: flatten 1-element lists produced by tshark -e
+    for p in packets:
+        layers = p.get("_source", {}).get("layers", {})
+        norm = {}
+        for k, v in layers.items():
+            if isinstance(v, list) and len(v) == 1:
+                norm[k] = v[0]
+            else:
+                norm[k] = v
+        if "smtp.response.code" in norm and "smtp.rsp.code" not in norm:
+            norm["smtp.rsp.code"] = norm["smtp.response.code"]
+        p.setdefault("_source", {})["layers"] = norm
+
     return packets
 
 
 def extract_field(pkt: dict, *keys: str, default: Any = None) -> Any:
     """Navigate nested tshark JSON to extract a field value."""
     layers = pkt.get("_source", {}).get("layers", {})
+
+    def _search(d: Any, target: str) -> Any:
+        if isinstance(d, dict):
+            if target in d:
+                return d[target]
+            for v in d.values():
+                res = _search(v, target)
+                if res is not None:
+                    return res
+        return None
+
     for key in keys:
-        val = layers.get(key)
+        val = _search(layers, key)
         if val is not None:
             return val
     return default
 
 
 def extract_field_list(pkt: dict, key: str) -> list[str]:
-    """Extract a field that may be a string or list."""
-    layers = pkt.get("_source", {}).get("layers", {})
-    val = layers.get(key)
+    """Extract a field that may be a string or list, searching nested layers."""
+    val = extract_field(pkt, key)
     if val is None:
         return []
     if isinstance(val, list):
@@ -177,8 +202,7 @@ def get_tcp_streams(pcap_path: str) -> dict[str, list[dict]]:
     streams: dict[str, list[dict]] = {}
 
     for pkt in packets:
-        layers = pkt.get("_source", {}).get("layers", {})
-        stream_id = layers.get("tcp.stream")
+        stream_id = extract_field(pkt, "tcp.stream")
         if stream_id is None:
             continue
         stream_id = str(stream_id)
@@ -210,7 +234,7 @@ def extract_certificates_from_pcap(pcap_path: str) -> dict[str, bytes]:
         cmd = [
             TSHARK_BIN,
             "-r", pcap_path,
-            "--export-objects", f"tls,{tmpdir}",
+            "--export-objects", f"x509af,{tmpdir}",
             "-q",
         ]
         try:
