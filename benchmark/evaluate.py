@@ -77,7 +77,7 @@ EXPECTED_RESULTS = {
     "07_plaintext_smtp.pcap": {
         "protocol": "SMTP",
         "has_tls": False,
-        "expected_finding_categories": ["configuration"],
+        "expected_finding_categories": ["starttls_anomaly"],
         "cert_observable": False,
         "anomalous": False,
         "description": "Plaintext SMTP — no_tls finding expected",
