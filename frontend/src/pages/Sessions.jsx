@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAnalysis } from '../hooks/useApi.js'
-import { ChevronRight, Shield, AlertTriangle } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 
 const STARTTLS_LABELS = {
   no_tls: { label: 'No TLS', color: 'var(--critical)' },

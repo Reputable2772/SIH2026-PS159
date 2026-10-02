@@ -37,23 +37,39 @@ export function useAnalysis(analysisId) {
   const [error, setError] = React.useState(null)
 
   React.useEffect(() => {
-    if (!analysisId) return
+    if (!analysisId) {
+      setData(null)
+      setLoading(false)
+      return
+    }
     setLoading(true)
+    setError(null)
+    let timeoutId = null
+    let cancelled = false
+
     const poll = async () => {
       try {
         const result = await get(`/api/analysis/${analysisId}`)
+        if (cancelled) return
         if (result.status === 'running' || result.status === 'pending') {
-          setTimeout(poll, 1500)
+          timeoutId = setTimeout(poll, 1500)
         } else {
           setData(result)
           setLoading(false)
         }
       } catch (err) {
-        setError(err.message)
-        setLoading(false)
+        if (!cancelled) {
+          setError(err.message)
+          setLoading(false)
+        }
       }
     }
     poll()
+
+    return () => {
+      cancelled = true
+      if (timeoutId) clearTimeout(timeoutId)
+    }
   }, [analysisId])
 
   return { data, loading, error }

@@ -1,9 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import { Routes, Route, NavLink, useNavigate } from 'react-router-dom'
-import {
-  Shield, Activity, Search, FileText, Upload, Home,
-  AlertTriangle, List, ChevronRight, Zap, Lock, Globe
-} from 'lucide-react'
+import { Routes, Route, NavLink } from 'react-router-dom'
+import { FileText, Upload, Home, AlertTriangle, List, BookOpen } from 'lucide-react'
 
 import Overview from './pages/Overview.jsx'
 import Sessions from './pages/Sessions.jsx'
@@ -11,6 +8,7 @@ import SessionDetail from './pages/SessionDetail.jsx'
 import Findings from './pages/Findings.jsx'
 import Reports from './pages/Reports.jsx'
 import UploadPage from './pages/Upload.jsx'
+import Guide from './pages/Guide.jsx'
 import { useApi } from './hooks/useApi.js'
 
 export default function App() {
@@ -19,20 +17,28 @@ export default function App() {
   const { get } = useApi()
 
   useEffect(() => {
+    let cancelled = false
     const fetchAnalyses = async () => {
       try {
         const data = await get('/api/analyses')
+        if (cancelled) return
         if (Array.isArray(data)) {
           setAnalyses(data)
-          // Auto-select first done analysis
-          const done = data.find(a => a.status === 'done')
-          if (done && !activeAnalysis) setActiveAnalysis(done.analysis_id)
+          // Auto-select first done analysis only if no analysis is currently active
+          setActiveAnalysis(current => {
+            if (current) return current
+            const done = data.find(a => a.status === 'done')
+            return done ? done.analysis_id : null
+          })
         }
       } catch {}
     }
     fetchAnalyses()
     const timer = setInterval(fetchAnalyses, 3000)
-    return () => clearInterval(timer)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
   }, [])
 
   const doneAnalyses = analyses.filter(a => a.status === 'done')
@@ -45,6 +51,7 @@ export default function App() {
     { to: '/findings', icon: AlertTriangle, label: 'Findings',
       badge: criticalCount > 0 ? criticalCount : null },
     { to: '/reports', icon: FileText, label: 'Reports' },
+    { to: '/guide', icon: BookOpen, label: 'Capture Guide' },
   ]
 
   return (
@@ -118,6 +125,7 @@ export default function App() {
           <Route path="/sessions/:sessionId" element={<SessionDetail analysisId={activeAnalysis} />} />
           <Route path="/findings" element={<Findings analysisId={activeAnalysis} />} />
           <Route path="/reports" element={<Reports analysisId={activeAnalysis} />} />
+          <Route path="/guide" element={<Guide />} />
         </Routes>
       </main>
     </div>

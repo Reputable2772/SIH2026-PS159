@@ -1,7 +1,7 @@
 import React from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAnalysis } from '../hooks/useApi.js'
-import { ChevronLeft, Shield, Lock, AlertTriangle, Activity } from 'lucide-react'
+import { ChevronLeft } from 'lucide-react'
 
 export default function SessionDetail({ analysisId }) {
   const { sessionId } = useParams()

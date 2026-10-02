@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApi } from '../hooks/useApi.js'
-import { Upload, FileText, Zap } from 'lucide-react'
+import { Upload, FileText, Zap, BookOpen, ArrowRight } from 'lucide-react'
 
 export default function UploadPage({ onAnalysisCreated }) {
   const { upload, post } = useApi()
@@ -24,9 +24,8 @@ export default function UploadPage({ onAnalysisCreated }) {
     setStatus(`Uploading ${file.name}...`)
     try {
       const { analysis_id } = await upload('/api/analysis/upload', file)
-      setStatus('Analysis started — redirecting...')
       onAnalysisCreated?.(analysis_id)
-      setTimeout(() => navigate('/'), 1000)
+      navigate('/')
     } catch (err) {
       setError(`Upload failed: ${err.message}`)
       setStatus('')
@@ -41,9 +40,8 @@ export default function UploadPage({ onAnalysisCreated }) {
     setStatus(`Analysing demo PCAP: ${pcap.filename}...`)
     try {
       const { analysis_id } = await post('/api/analysis/file', { pcap_path: pcap.path })
-      setStatus('Analysis started — redirecting...')
       onAnalysisCreated?.(analysis_id)
-      setTimeout(() => navigate('/'), 1000)
+      navigate('/')
     } catch (err) {
       setError(`Failed: ${err.message}`)
       setStatus('')
@@ -59,8 +57,7 @@ export default function UploadPage({ onAnalysisCreated }) {
       const { demo_analyses } = await post('/api/demo/run', {})
       if (demo_analyses?.length > 0) {
         onAnalysisCreated?.(demo_analyses[0].analysis_id)
-        setStatus(`Started ${demo_analyses.length} demo analyses`)
-        setTimeout(() => navigate('/'), 1500)
+        navigate('/')
       }
     } catch (err) {
       setError(`Demo failed: ${err.message}`)
@@ -74,6 +71,34 @@ export default function UploadPage({ onAnalysisCreated }) {
       <div className="page-header">
         <h2 className="page-title">Upload PCAP</h2>
         <p className="page-subtitle">Upload a network capture containing SMTP, IMAP, or POP3 traffic</p>
+      </div>
+
+      {/* Capture Help Callout */}
+      <div style={{
+        background: 'rgba(88,166,255,0.08)',
+        border: '1px solid rgba(88,166,255,0.22)',
+        borderRadius: 8,
+        padding: '0.85rem 1.15rem',
+        marginBottom: '1.25rem',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '0.75rem'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+          <BookOpen size={17} color="var(--accent)" />
+          <span style={{ fontSize: '0.84rem', color: 'var(--text)' }}>
+            Need commands to capture live SMTP/IMAP/POP3 traffic using <code>tcpdump</code>, <code>tshark</code>, or Wireshark?
+          </span>
+        </div>
+        <button
+          className="btn btn-secondary"
+          onClick={() => navigate('/guide')}
+          style={{ fontSize: '0.78rem', padding: '0.35rem 0.75rem', gap: '0.3rem' }}
+        >
+          View Capture Guide <ArrowRight size={13} />
+        </button>
       </div>
 
       {/* Upload zone */}
@@ -172,6 +197,15 @@ export default function UploadPage({ onAnalysisCreated }) {
           <li>🔍 All findings include traceable evidence (session, packet numbers, observed values)</li>
           <li>📋 JSON, HTML, and PDF reports available after analysis</li>
         </ul>
+        <div style={{ marginTop: '1rem', borderTop: '1px solid var(--border)', paddingTop: '0.75rem' }}>
+          <button
+            className="btn btn-secondary"
+            onClick={() => navigate('/guide')}
+            style={{ fontSize: '0.78rem', padding: '0.35rem 0.75rem', gap: '0.35rem' }}
+          >
+            <BookOpen size={13} /> Open Full Capture & Protocol Guide
+          </button>
+        </div>
       </div>
     </div>
   )

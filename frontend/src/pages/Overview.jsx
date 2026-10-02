@@ -1,16 +1,8 @@
 import React from 'react'
 import { useAnalysis } from '../hooks/useApi.js'
 import { RadialBarChart, RadialBar, PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
-import { Shield, AlertTriangle, Activity, Lock, Zap, Globe, ChevronRight } from 'lucide-react'
+import { Shield, ChevronRight, BookOpen } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-
-const SEV_COLORS = {
-  critical: '#ff6b6b',
-  high: '#f5a623',
-  medium: '#ffd700',
-  low: '#58a6ff',
-  info: '#3fb950',
-}
 
 function ScoreGauge({ score, level }) {
   const color = score >= 85 ? '#3fb950' : score >= 70 ? '#56d364' : score >= 50 ? '#f5a623' : score >= 30 ? '#e3b341' : '#ff6b6b'
@@ -126,9 +118,14 @@ export default function Overview({ analysisId }) {
           <div style={{ color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
             Upload a PCAP containing SMTP, IMAP, or POP3 traffic to analyse cryptographic security posture.
           </div>
-          <button className="btn btn-primary" onClick={() => navigate('/upload')}>
-            Upload PCAP
-          </button>
+          <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button className="btn btn-primary" onClick={() => navigate('/upload')}>
+              Upload PCAP
+            </button>
+            <button className="btn btn-secondary" onClick={() => navigate('/guide')} style={{ gap: '0.4rem' }}>
+              <BookOpen size={14} /> Capture Guide & Instructions
+            </button>
+          </div>
         </div>
       </div>
     )
