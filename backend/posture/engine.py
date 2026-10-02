@@ -5,6 +5,7 @@ Deterministic rules that evaluate observed facts and produce findings.
 Architecture:
     Observed Fact → Rule Evaluation → Finding → Severity → Recommendation
 """
+
 from __future__ import annotations
 
 import logging
@@ -97,29 +98,32 @@ def evaluate_tls_version(session: TCPSession) -> list[Finding]:
     version = session.tls_handshake.tls_version
     if version in TLS_VERSION_RULES:
         sev, desc, rec = TLS_VERSION_RULES[version]
-        findings.append(_make_finding(
-            severity=sev,
-            category=FindingCategory.DEPRECATED_TLS,
-            title=f"Deprecated TLS version negotiated: {version.value}",
-            description=desc,
-            recommendation=rec,
-            session=session,
-            field="tls.handshake.version",
-            observed_value=version.value,
-            packet_numbers=[n for n in [
-                session.tls_handshake.server_hello_pkt
-            ] if n is not None],
-            cves={
-                TLSVersion.SSL_3_0: ["CVE-2014-3566"],
-                TLSVersion.TLS_1_0: ["CVE-2011-3389"],
-            }.get(version, []),
-        ))
+        findings.append(
+            _make_finding(
+                severity=sev,
+                category=FindingCategory.DEPRECATED_TLS,
+                title=f"Deprecated TLS version negotiated: {version.value}",
+                description=desc,
+                recommendation=rec,
+                session=session,
+                field="tls.handshake.version",
+                observed_value=version.value,
+                packet_numbers=[
+                    n for n in [session.tls_handshake.server_hello_pkt] if n is not None
+                ],
+                cves={
+                    TLSVersion.SSL_3_0: ["CVE-2014-3566"],
+                    TLSVersion.TLS_1_0: ["CVE-2011-3389"],
+                }.get(version, []),
+            )
+        )
     return findings
 
 
 # ---------------------------------------------------------------------------
 # Cipher Suite Rules
 # ---------------------------------------------------------------------------
+
 
 def evaluate_cipher_suite(session: TCPSession) -> list[Finding]:
     findings = []
@@ -157,30 +161,35 @@ def evaluate_cipher_suite(session: TCPSession) -> list[Finding]:
             desc = f"Cipher suite {cipher!r} is deprecated or weak."
             sev = FindingSeverity.HIGH
 
-        findings.append(_make_finding(
-            severity=sev,
-            category=FindingCategory.WEAK_CIPHER,
-            title=f"Weak/deprecated cipher suite: {cipher}",
-            description=desc,
-            recommendation="Use ECDHE or DHE key exchange with AES-GCM or ChaCha20-Poly1305.",
-            session=session,
-            field="tls.handshake.ciphersuite",
-            observed_value=cipher,
-            packet_numbers=[n for n in [session.tls_handshake.server_hello_pkt] if n is not None],
-            cves={
-                "RC4": ["CVE-2013-2566", "RFC 7465"],
-                "3DES": ["CVE-2016-2183"],
-            }.get(
-                next((k for k in ["RC4", "3DES", "NULL"] if k in cipher), ""),
-                [],
-            ),
-        ))
+        findings.append(
+            _make_finding(
+                severity=sev,
+                category=FindingCategory.WEAK_CIPHER,
+                title=f"Weak/deprecated cipher suite: {cipher}",
+                description=desc,
+                recommendation="Use ECDHE or DHE key exchange with AES-GCM or ChaCha20-Poly1305.",
+                session=session,
+                field="tls.handshake.ciphersuite",
+                observed_value=cipher,
+                packet_numbers=[
+                    n for n in [session.tls_handshake.server_hello_pkt] if n is not None
+                ],
+                cves={
+                    "RC4": ["CVE-2013-2566", "RFC 7465"],
+                    "3DES": ["CVE-2016-2183"],
+                }.get(
+                    next((k for k in ["RC4", "3DES", "NULL"] if k in cipher), ""),
+                    [],
+                ),
+            )
+        )
     return findings
 
 
 # ---------------------------------------------------------------------------
 # Forward Secrecy Rules
 # ---------------------------------------------------------------------------
+
 
 def evaluate_forward_secrecy(session: TCPSession) -> list[Finding]:
     findings = []
@@ -196,25 +205,29 @@ def evaluate_forward_secrecy(session: TCPSession) -> list[Finding]:
             return findings
 
         cipher = session.tls_handshake.cipher_suite or "unknown"
-        findings.append(_make_finding(
-            severity=FindingSeverity.HIGH,
-            category=FindingCategory.NO_FORWARD_SECRECY,
-            title=f"No Forward Secrecy: {cipher}",
-            description=(
-                f"The cipher suite {cipher!r} uses RSA key exchange without ephemeral keys. "
-                "If the server's private key is ever compromised, all past sessions "
-                "can be decrypted."
-            ),
-            recommendation=(
-                "Use cipher suites with ECDHE or DHE key exchange "
-                "(e.g., TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384) "
-                "or upgrade to TLS 1.3 which mandates forward secrecy."
-            ),
-            session=session,
-            field="tls.handshake.ciphersuite",
-            observed_value=cipher,
-            packet_numbers=[n for n in [session.tls_handshake.server_hello_pkt] if n is not None],
-        ))
+        findings.append(
+            _make_finding(
+                severity=FindingSeverity.HIGH,
+                category=FindingCategory.NO_FORWARD_SECRECY,
+                title=f"No Forward Secrecy: {cipher}",
+                description=(
+                    f"The cipher suite {cipher!r} uses RSA key exchange without ephemeral keys. "
+                    "If the server's private key is ever compromised, all past sessions "
+                    "can be decrypted."
+                ),
+                recommendation=(
+                    "Use cipher suites with ECDHE or DHE key exchange "
+                    "(e.g., TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384) "
+                    "or upgrade to TLS 1.3 which mandates forward secrecy."
+                ),
+                session=session,
+                field="tls.handshake.ciphersuite",
+                observed_value=cipher,
+                packet_numbers=[
+                    n for n in [session.tls_handshake.server_hello_pkt] if n is not None
+                ],
+            )
+        )
     return findings
 
 
@@ -222,79 +235,88 @@ def evaluate_forward_secrecy(session: TCPSession) -> list[Finding]:
 # STARTTLS Rules
 # ---------------------------------------------------------------------------
 
+
 def evaluate_starttls(session: TCPSession) -> list[Finding]:
     findings = []
     state = session.starttls_state
 
     if state == STARTTLSState.SUSPICIOUS_FALLBACK:
-        findings.append(_make_finding(
-            severity=FindingSeverity.CRITICAL,
-            category=FindingCategory.STARTTLS_ANOMALY,
-            title="Suspicious STARTTLS downgrade / fallback detected",
-            description=(
-                f"Protocol: {session.protocol.value}. "
-                "STARTTLS was advertised by the server and/or requested by the client, "
-                "but a TLS handshake was not observed to complete. "
-                "Cleartext protocol commands continued after STARTTLS advertisement. "
-                "This may indicate STARTTLS stripping, a network-level downgrade attack, "
-                "or a misconfigured client that accepted a downgrade. "
-                "NOTE: Passive observation cannot conclusively prove an active attack — "
-                "this finding labels the observed protocol-state inconsistency."
-            ),
-            recommendation=(
-                "Investigate the session. Configure clients to require TLS and reject "
-                "downgrade. Consider implicit TLS ports (465 for SMTP, 993 for IMAP, "
-                "995 for POP3) which cannot be stripped."
-            ),
-            session=session,
-            field="starttls_state",
-            observed_value=state.value,
-            packet_numbers=[
-                n for n in [
-                    session.starttls_advertised_pkt,
-                    session.starttls_requested_pkt,
-                ] if n is not None
-            ],
-        ))
+        findings.append(
+            _make_finding(
+                severity=FindingSeverity.CRITICAL,
+                category=FindingCategory.STARTTLS_ANOMALY,
+                title="Suspicious STARTTLS downgrade / fallback detected",
+                description=(
+                    f"Protocol: {session.protocol.value}. "
+                    "STARTTLS was advertised by the server and/or requested by the client, "
+                    "but a TLS handshake was not observed to complete. "
+                    "Cleartext protocol commands continued after STARTTLS advertisement. "
+                    "This may indicate STARTTLS stripping, a network-level downgrade attack, "
+                    "or a misconfigured client that accepted a downgrade. "
+                    "NOTE: Passive observation cannot conclusively prove an active attack — "
+                    "this finding labels the observed protocol-state inconsistency."
+                ),
+                recommendation=(
+                    "Investigate the session. Configure clients to require TLS and reject "
+                    "downgrade. Consider implicit TLS ports (465 for SMTP, 993 for IMAP, "
+                    "995 for POP3) which cannot be stripped."
+                ),
+                session=session,
+                field="starttls_state",
+                observed_value=state.value,
+                packet_numbers=[
+                    n
+                    for n in [
+                        session.starttls_advertised_pkt,
+                        session.starttls_requested_pkt,
+                    ]
+                    if n is not None
+                ],
+            )
+        )
 
     if session.cleartext_auth_detected:
-        findings.append(_make_finding(
-            severity=FindingSeverity.CRITICAL,
-            category=FindingCategory.PLAINTEXT_AUTH,
-            title="Plaintext authentication credentials transmitted without TLS",
-            description=(
-                f"Protocol: {session.protocol.value}. "
-                "Authentication commands (AUTH, LOGIN, USER/PASS) were observed "
-                "in cleartext before a TLS session was established. "
-                "Credentials may be exposed to network observers."
-            ),
-            recommendation=(
-                "Require TLS before any authentication. "
-                "Use SASL PLAIN only over encrypted channels. "
-                "Consider implicit TLS ports."
-            ),
-            session=session,
-            field="cleartext_auth",
-            observed_value=True,
-        ))
+        findings.append(
+            _make_finding(
+                severity=FindingSeverity.CRITICAL,
+                category=FindingCategory.PLAINTEXT_AUTH,
+                title="Plaintext authentication credentials transmitted without TLS",
+                description=(
+                    f"Protocol: {session.protocol.value}. "
+                    "Authentication commands (AUTH, LOGIN, USER/PASS) were observed "
+                    "in cleartext before a TLS session was established. "
+                    "Credentials may be exposed to network observers."
+                ),
+                recommendation=(
+                    "Require TLS before any authentication. "
+                    "Use SASL PLAIN only over encrypted channels. "
+                    "Consider implicit TLS ports."
+                ),
+                session=session,
+                field="cleartext_auth",
+                observed_value=True,
+            )
+        )
 
     if state == STARTTLSState.ADVERTISED:
-        findings.append(_make_finding(
-            severity=FindingSeverity.MEDIUM,
-            category=FindingCategory.STARTTLS_ANOMALY,
-            title="STARTTLS advertised but not used by client",
-            description=(
-                f"Protocol: {session.protocol.value}. "
-                "The server advertised STARTTLS support, but the client did not "
-                "initiate a STARTTLS upgrade. The session may have continued in plaintext."
-            ),
-            recommendation=(
-                "Configure the email client to require STARTTLS or use implicit TLS."
-            ),
-            session=session,
-            field="starttls_state",
-            observed_value=state.value,
-        ))
+        findings.append(
+            _make_finding(
+                severity=FindingSeverity.MEDIUM,
+                category=FindingCategory.STARTTLS_ANOMALY,
+                title="STARTTLS advertised but not used by client",
+                description=(
+                    f"Protocol: {session.protocol.value}. "
+                    "The server advertised STARTTLS support, but the client did not "
+                    "initiate a STARTTLS upgrade. The session may have continued in plaintext."
+                ),
+                recommendation=(
+                    "Configure the email client to require STARTTLS or use implicit TLS."
+                ),
+                session=session,
+                field="starttls_state",
+                observed_value=state.value,
+            )
+        )
 
     return findings
 
@@ -302,6 +324,7 @@ def evaluate_starttls(session: TCPSession) -> list[Finding]:
 # ---------------------------------------------------------------------------
 # No TLS Rule
 # ---------------------------------------------------------------------------
+
 
 def evaluate_no_tls(session: TCPSession) -> list[Finding]:
     findings = []
@@ -312,30 +335,32 @@ def evaluate_no_tls(session: TCPSession) -> list[Finding]:
         and session.starttls_state == STARTTLSState.NO_TLS
         and session.tls_handshake is None
     ):
-        findings.append(_make_finding(
-            severity=FindingSeverity.HIGH,
-            category=FindingCategory.STARTTLS_ANOMALY,
-            title=f"No TLS: {session.protocol.value} session transmitted entirely in plaintext",
-            description=(
-                f"The {session.protocol.value} session between "
-                f"{session.src_ip}:{session.src_port} and "
-                f"{session.dst_ip}:{session.dst_port} "
-                "was conducted entirely in plaintext with no TLS or STARTTLS observed."
-            ),
-            recommendation=(
-                "Configure the mail server to require TLS. "
-                "Use STARTTLS or implicit TLS ports."
-            ),
-            session=session,
-            field="tls_handshake",
-            observed_value=None,
-        ))
+        findings.append(
+            _make_finding(
+                severity=FindingSeverity.HIGH,
+                category=FindingCategory.STARTTLS_ANOMALY,
+                title=f"No TLS: {session.protocol.value} session transmitted entirely in plaintext",
+                description=(
+                    f"The {session.protocol.value} session between "
+                    f"{session.src_ip}:{session.src_port} and "
+                    f"{session.dst_ip}:{session.dst_port} "
+                    "was conducted entirely in plaintext with no TLS or STARTTLS observed."
+                ),
+                recommendation=(
+                    "Configure the mail server to require TLS. Use STARTTLS or implicit TLS ports."
+                ),
+                session=session,
+                field="tls_handshake",
+                observed_value=None,
+            )
+        )
     return findings
 
 
 # ---------------------------------------------------------------------------
 # Main Rule Engine
 # ---------------------------------------------------------------------------
+
 
 class PostureRuleEngine:
     """

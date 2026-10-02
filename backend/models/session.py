@@ -2,18 +2,19 @@
 SecureMailScope — Core Data Models
 All data flowing through the pipeline is typed with Pydantic models.
 """
+
 from __future__ import annotations
 
 import enum
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
-
 
 # ---------------------------------------------------------------------------
 # Enumerations
 # ---------------------------------------------------------------------------
+
 
 class ApplicationProtocol(str, enum.Enum):
     SMTP = "SMTP"
@@ -34,14 +35,15 @@ class TLSVersion(str, enum.Enum):
 
 class STARTTLSState(str, enum.Enum):
     """STARTTLS negotiation state machine states."""
-    NO_TLS = "no_tls"                          # Plaintext only
-    NONE = "no_tls"                            # Alias for NO_TLS
-    ADVERTISED = "advertised"                   # Server advertised STARTTLS
-    REQUESTED = "requested"                     # Client sent STARTTLS command
-    NEGOTIATED = "negotiated"                   # TLS handshake completed
-    FAILED = "failed"                           # STARTTLS attempted but failed
-    SUSPICIOUS_FALLBACK = "suspicious_fallback" # Cleartext after STARTTLS advert
-    DIRECT_TLS = "direct_tls"                   # Implicit TLS (no STARTTLS)
+
+    NO_TLS = "no_tls"  # Plaintext only
+    NONE = "no_tls"  # Alias for NO_TLS
+    ADVERTISED = "advertised"  # Server advertised STARTTLS
+    REQUESTED = "requested"  # Client sent STARTTLS command
+    NEGOTIATED = "negotiated"  # TLS handshake completed
+    FAILED = "failed"  # STARTTLS attempted but failed
+    SUSPICIOUS_FALLBACK = "suspicious_fallback"  # Cleartext after STARTTLS advert
+    DIRECT_TLS = "direct_tls"  # Implicit TLS (no STARTTLS)
 
 
 class FindingSeverity(str, enum.Enum):
@@ -72,13 +74,14 @@ class FindingCategory(str, enum.Enum):
 
 
 class ForwardSecrecyStatus(str, enum.Enum):
-    YES = "yes"                    # Forward secrecy confirmed
-    NO = "no"                      # Forward secrecy absent
-    UNKNOWN = "unknown"            # Cannot determine from capture
+    YES = "yes"  # Forward secrecy confirmed
+    NO = "no"  # Forward secrecy absent
+    UNKNOWN = "unknown"  # Cannot determine from capture
 
 
 class ObservabilityStatus(str, enum.Enum):
     """Whether a piece of data was actually observed in the capture."""
+
     OBSERVED = "observed"
     NOT_OBSERVABLE = "not_observable"
     PARTIALLY_OBSERVABLE = "partially_observable"
@@ -88,13 +91,15 @@ class ObservabilityStatus(str, enum.Enum):
 # Evidence Provenance
 # ---------------------------------------------------------------------------
 
+
 class Evidence(BaseModel):
     """Traceable evidence for a finding — answers 'why did we flag this?'"""
+
     pcap_file: str = ""
     session_id: str
     packet_numbers: list[int] = Field(default_factory=list)
-    field: Optional[str] = None
-    observed_value: Optional[Any] = None
+    field: str | None = None
+    observed_value: Any | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -102,8 +107,10 @@ class Evidence(BaseModel):
 # Finding
 # ---------------------------------------------------------------------------
 
+
 class Finding(BaseModel):
     """A single deterministic security finding produced by the rule engine."""
+
     id: str
     severity: FindingSeverity
     category: FindingCategory
@@ -119,72 +126,76 @@ class Finding(BaseModel):
 # X.509 Certificate Models
 # ---------------------------------------------------------------------------
 
+
 class PublicKeyInfo(BaseModel):
-    algorithm: str                 # RSA, EC, DSA, Ed25519, …
-    key_size_bits: Optional[int] = None   # RSA/DSA key size; None for curves
-    curve: Optional[str] = None    # EC named curve
-    public_exponent: Optional[int] = None  # RSA e
+    algorithm: str  # RSA, EC, DSA, Ed25519, …
+    key_size_bits: int | None = None  # RSA/DSA key size; None for curves
+    curve: str | None = None  # EC named curve
+    public_exponent: int | None = None  # RSA e
     observability: ObservabilityStatus = ObservabilityStatus.OBSERVED
 
 
 class CertificateInfo(BaseModel):
     """Parsed X.509 certificate — only fields verifiably extracted from PCAP."""
+
     fingerprint_sha256: str
-    subject_cn: Optional[str] = None
-    subject_dn: Optional[str] = None
-    issuer_cn: Optional[str] = None
-    issuer_dn: Optional[str] = None
+    subject_cn: str | None = None
+    subject_dn: str | None = None
+    issuer_cn: str | None = None
+    issuer_dn: str | None = None
     san: list[str] = Field(default_factory=list)
-    not_before: Optional[datetime] = None
-    not_after: Optional[datetime] = None
-    is_expired: Optional[bool] = None
-    days_until_expiry: Optional[int] = None
-    is_self_signed: Optional[bool] = None
-    signature_algorithm: Optional[str] = None
-    public_key: Optional[PublicKeyInfo] = None
-    serial_number: Optional[str] = None
-    version: Optional[int] = None
+    not_before: datetime | None = None
+    not_after: datetime | None = None
+    is_expired: bool | None = None
+    days_until_expiry: int | None = None
+    is_self_signed: bool | None = None
+    signature_algorithm: str | None = None
+    public_key: PublicKeyInfo | None = None
+    serial_number: str | None = None
+    version: int | None = None
     observability: ObservabilityStatus = ObservabilityStatus.OBSERVED
     # TLS 1.3: certificate may not be observable
-    extraction_note: Optional[str] = None
-    raw_der_b64: Optional[str] = None   # base64-encoded DER for export
+    extraction_note: str | None = None
+    raw_der_b64: str | None = None  # base64-encoded DER for export
 
 
 # ---------------------------------------------------------------------------
 # TLS Handshake
 # ---------------------------------------------------------------------------
 
+
 class TLSHandshake(BaseModel):
     """Observable TLS handshake data extracted from a session."""
+
     tls_version: TLSVersion = TLSVersion.UNKNOWN
-    cipher_suite: Optional[str] = None
-    cipher_suite_hex: Optional[str] = None
-    key_exchange: Optional[str] = None           # DHE, ECDHE, RSA, …
+    cipher_suite: str | None = None
+    cipher_suite_hex: str | None = None
+    key_exchange: str | None = None  # DHE, ECDHE, RSA, …
     forward_secrecy: ForwardSecrecyStatus = ForwardSecrecyStatus.UNKNOWN
 
     # Client Hello fields
     client_offered_ciphers: list[str] = Field(default_factory=list)
     client_tls_extensions: list[str] = Field(default_factory=list)
-    client_hello_version: Optional[str] = None
+    client_hello_version: str | None = None
 
     # Server Hello fields
-    server_hello_version: Optional[str] = None
+    server_hello_version: str | None = None
     server_tls_extensions: list[str] = Field(default_factory=list)
 
     # Certificate chain (may be empty for TLS 1.3 without keys)
     certificates: list[CertificateInfo] = Field(default_factory=list)
     cert_observability: ObservabilityStatus = ObservabilityStatus.OBSERVED
-    cert_observability_note: Optional[str] = None
+    cert_observability_note: str | None = None
 
     # JA3 fingerprint (client)
-    ja3_hash: Optional[str] = None
-    ja3_string: Optional[str] = None
+    ja3_hash: str | None = None
+    ja3_string: str | None = None
 
     # Packet numbers for evidence tracing
-    client_hello_pkt: Optional[int] = None
-    server_hello_pkt: Optional[int] = None
+    client_hello_pkt: int | None = None
+    server_hello_pkt: int | None = None
     handshake_complete: bool = False
-    cipher_suite_name: Optional[str] = None
+    cipher_suite_name: str | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -205,61 +216,64 @@ TLSHandshakeInfo = TLSHandshake
 # TCP Session
 # ---------------------------------------------------------------------------
 
+
 class TCPSession(BaseModel):
     """Reconstructed TCP session with application-layer context."""
+
     session_id: str
     src_ip: str
     src_port: int
     dst_ip: str
     dst_port: int
-    start_time: Optional[float] = None
-    end_time: Optional[float] = None
-    duration_seconds: Optional[float] = None
+    start_time: float | None = None
+    end_time: float | None = None
+    duration_seconds: float | None = None
     packet_count: int = 0
     bytes_transferred: int = 0
 
     # Application layer
     protocol: ApplicationProtocol = ApplicationProtocol.UNKNOWN
     starttls_state: STARTTLSState = STARTTLSState.NO_TLS
-    starttls_advertised_pkt: Optional[int] = None
-    starttls_requested_pkt: Optional[int] = None
-    tls_start_pkt: Optional[int] = None
+    starttls_advertised_pkt: int | None = None
+    starttls_requested_pkt: int | None = None
+    tls_start_pkt: int | None = None
 
     # Plaintext command snippets (only SMTP/IMAP/POP3 command lines — never payload content)
     protocol_banners: list[str] = Field(default_factory=list)
     cleartext_auth_detected: bool = False
 
     # TLS
-    tls_handshake: Optional[TLSHandshake] = None
+    tls_handshake: TLSHandshake | None = None
 
     # Findings for this session
     findings: list[Finding] = Field(default_factory=list)
 
     # ML anomaly
-    anomaly_score: Optional[float] = None
-    is_anomalous: Optional[bool] = None
+    anomaly_score: float | None = None
+    is_anomalous: bool | None = None
     anomaly_features: dict[str, Any] = Field(default_factory=dict)
 
     # Risk score for this session
-    session_risk_score: Optional[float] = None
-    session_risk_level: Optional[str] = None
+    session_risk_score: float | None = None
+    session_risk_level: str | None = None
 
 
 # ---------------------------------------------------------------------------
 # PCAP Analysis Result
 # ---------------------------------------------------------------------------
 
+
 class CaptureMetadata(BaseModel):
     pcap_path: str = ""
     pcap_filename: str = ""
     sha256_hash: str = ""
     file_size_bytes: int = 0
-    capture_duration_seconds: Optional[float] = None
-    duration_seconds: Optional[float] = None
+    capture_duration_seconds: float | None = None
+    duration_seconds: float | None = None
     packet_count: int = 0
-    first_packet_time: Optional[float] = None
-    last_packet_time: Optional[float] = None
-    analyzed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    first_packet_time: float | None = None
+    last_packet_time: float | None = None
+    analyzed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     tool_version: str = "0.1.0"
 
     @model_validator(mode="before")
@@ -275,8 +289,9 @@ class CaptureMetadata(BaseModel):
 
 class RiskScore(BaseModel):
     """SecureMailScope Composite Risk Score — prototype scoring methodology."""
+
     score: float = Field(ge=0.0, le=100.0)
-    level: str           # CRITICAL / HIGH / MEDIUM / LOW / MINIMAL
+    level: str  # CRITICAL / HIGH / MEDIUM / LOW / MINIMAL
     rationale: list[str] = Field(default_factory=list)
     critical_count: int = 0
     high_count: int = 0
@@ -303,6 +318,7 @@ class ProtocolSummary(BaseModel):
 
 class AnalysisResult(BaseModel):
     """Top-level result of a PCAP analysis run."""
+
     analysis_id: str
     capture: CaptureMetadata
     sessions: list[TCPSession] = Field(default_factory=list)

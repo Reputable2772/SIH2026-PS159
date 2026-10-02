@@ -3,6 +3,7 @@ SecureMailScope — ML Anomaly Detection
 Isolation Forest-based anomaly detector operating on TLS/session metadata features.
 No encrypted payload contents are processed.
 """
+
 from __future__ import annotations
 
 import logging
@@ -25,6 +26,7 @@ def _load_sklearn():
     if not _sklearn_loaded:
         from sklearn.ensemble import IsolationForest
         from sklearn.preprocessing import StandardScaler
+
         _IsolationForest = IsolationForest
         _StandardScaler = StandardScaler
         _sklearn_loaded = True
@@ -37,22 +39,22 @@ def _load_sklearn():
 # Feature names in the order they appear in the feature vector.
 # These are TLS/session METADATA features only — no payload content.
 FEATURE_NAMES = [
-    "tls_version_num",        # Numeric: 10=TLS1.0, 11=TLS1.1, 12=TLS1.2, 13=TLS1.3, 0=none
-    "cipher_strength_cat",    # 0=unknown, 1=null/export, 2=weak, 3=medium, 4=strong
-    "key_exchange_cat",       # 0=unknown, 1=RSA, 2=DHE, 3=ECDHE, 4=anon
-    "forward_secrecy",        # 0=no/unknown, 1=yes
-    "cert_observable",        # 0=not observable, 1=observed
-    "cert_expired",           # 0=no/unknown, 1=yes
-    "cert_self_signed",       # 0=no/unknown, 1=yes
-    "cert_key_bits_norm",     # key bits / 4096 (normalized)
-    "sig_alg_weak",           # 0=ok, 1=weak sig algorithm
-    "starttls_state_cat",     # 0=none, 1=direct, 2=negotiated, 3=advertised, 4=suspicious
-    "cleartext_auth",         # 0=no, 1=yes
-    "protocol_cat",           # 0=unknown, 1=SMTP, 2=IMAP, 3=POP3
-    "offered_cipher_count",   # number of client-offered ciphers (0 if unknown)
-    "extension_count",        # number of TLS extensions
+    "tls_version_num",  # Numeric: 10=TLS1.0, 11=TLS1.1, 12=TLS1.2, 13=TLS1.3, 0=none
+    "cipher_strength_cat",  # 0=unknown, 1=null/export, 2=weak, 3=medium, 4=strong
+    "key_exchange_cat",  # 0=unknown, 1=RSA, 2=DHE, 3=ECDHE, 4=anon
+    "forward_secrecy",  # 0=no/unknown, 1=yes
+    "cert_observable",  # 0=not observable, 1=observed
+    "cert_expired",  # 0=no/unknown, 1=yes
+    "cert_self_signed",  # 0=no/unknown, 1=yes
+    "cert_key_bits_norm",  # key bits / 4096 (normalized)
+    "sig_alg_weak",  # 0=ok, 1=weak sig algorithm
+    "starttls_state_cat",  # 0=none, 1=direct, 2=negotiated, 3=advertised, 4=suspicious
+    "cleartext_auth",  # 0=no, 1=yes
+    "protocol_cat",  # 0=unknown, 1=SMTP, 2=IMAP, 3=POP3
+    "offered_cipher_count",  # number of client-offered ciphers (0 if unknown)
+    "extension_count",  # number of TLS extensions
     "session_duration_norm",  # session duration / 300 (capped at 1)
-    "packet_count_norm",      # packet count / 100 (capped at 1)
+    "packet_count_norm",  # packet count / 100 (capped at 1)
 ]
 
 N_FEATURES = len(FEATURE_NAMES)
@@ -61,6 +63,7 @@ N_FEATURES = len(FEATURE_NAMES)
 # ---------------------------------------------------------------------------
 # Feature Extraction
 # ---------------------------------------------------------------------------
+
 
 def extract_features(session) -> np.ndarray:
     """
@@ -98,9 +101,7 @@ def extract_features(session) -> np.ndarray:
             features[1] = 2.0
         elif "3DES" in cipher or "RC2" in cipher:
             features[1] = 2.5
-        elif "AES_128" in cipher or "CHACHA20" in cipher:
-            features[1] = 4.0
-        elif "AES_256" in cipher:
+        elif "AES_128" in cipher or "CHACHA20" in cipher or "AES_256" in cipher:
             features[1] = 4.0
         elif cipher:
             features[1] = 3.0
@@ -155,9 +156,7 @@ def extract_features(session) -> np.ndarray:
         features[10] = 1.0 if session.cleartext_auth_detected else 0.0
 
         # Protocol
-        proto_map = {
-            "SMTP": 1.0, "IMAP": 2.0, "POP3": 3.0, "UNKNOWN": 0.0
-        }
+        proto_map = {"SMTP": 1.0, "IMAP": 2.0, "POP3": 3.0, "UNKNOWN": 0.0}
         features[11] = proto_map.get(session.protocol.value, 0.0)
 
         # Offered ciphers count
@@ -178,6 +177,7 @@ def extract_features(session) -> np.ndarray:
 # ---------------------------------------------------------------------------
 # Synthetic Training Data Generation
 # ---------------------------------------------------------------------------
+
 
 def generate_synthetic_training_data(n_benign: int = 500, seed: int = 42) -> np.ndarray:
     """
@@ -210,11 +210,26 @@ def generate_synthetic_training_data(n_benign: int = 500, seed: int = 42) -> np.
         duration = rng.uniform(0.0, 0.3)
         pkt_count = rng.uniform(0.05, 0.5)
 
-        rows.append([
-            tls_ver, cipher_strength, kex, fs, cert_obs, cert_expired, cert_self_signed,
-            cert_key_norm, sig_weak, starttls, cleartext, proto, cipher_count, ext_count,
-            duration, pkt_count,
-        ])
+        rows.append(
+            [
+                tls_ver,
+                cipher_strength,
+                kex,
+                fs,
+                cert_obs,
+                cert_expired,
+                cert_self_signed,
+                cert_key_norm,
+                sig_weak,
+                starttls,
+                cleartext,
+                proto,
+                cipher_count,
+                ext_count,
+                duration,
+                pkt_count,
+            ]
+        )
 
     return np.array(rows, dtype=np.float32)
 
@@ -230,7 +245,7 @@ SCALER_PATH = Path(__file__).parent / "scaler.pkl"
 class TLSAnomalyDetector:
     """
     Isolation Forest anomaly detector for TLS/session metadata.
-    
+
     Distinguishes from the rule engine:
     - Rule engine: deterministic, based on known-bad patterns
     - This detector: probabilistic, flags statistically unusual sessions
@@ -266,6 +281,7 @@ class TLSAnomalyDetector:
     def save(self) -> None:
         """Persist model to disk for offline use."""
         import pickle
+
         MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(MODEL_PATH, "wb") as f:
             pickle.dump(self._model, f)
@@ -276,13 +292,14 @@ class TLSAnomalyDetector:
     def load(self) -> bool:
         """Load a pre-trained model from disk."""
         import pickle
+
         if not MODEL_PATH.exists() or not SCALER_PATH.exists():
             return False
         try:
             with open(MODEL_PATH, "rb") as f:
-                self._model = pickle.load(f)  # noqa: S301
+                self._model = pickle.load(f)
             with open(SCALER_PATH, "rb") as f:
-                self._scaler = pickle.load(f)  # noqa: S301
+                self._scaler = pickle.load(f)
             self._trained = True
             logger.info("Anomaly model loaded from disk")
             return True
@@ -303,7 +320,7 @@ class TLSAnomalyDetector:
         Score a single session.
         Returns:
             (anomaly_score_normalized, is_anomalous, feature_dict)
-        
+
         anomaly_score_normalized: 0.0 (very normal) to 1.0 (very anomalous)
         is_anomalous: True if model predicts anomaly
         """
@@ -320,10 +337,7 @@ class TLSAnomalyDetector:
         # Normalize to [0, 1]: dec >= 0.25 -> ~0.0 (normal), dec <= -0.25 -> ~1.0 (anomalous)
         normalized = float(np.clip(0.5 - (dec / 0.5), 0.0, 1.0))
 
-        feature_dict = {
-            name: float(val)
-            for name, val in zip(FEATURE_NAMES, features)
-        }
+        feature_dict = {name: float(val) for name, val in zip(FEATURE_NAMES, features, strict=True)}
 
         return normalized, is_anomalous, feature_dict
 
@@ -341,9 +355,7 @@ class TLSAnomalyDetector:
                 session.anomaly_features = feat_dict
 
                 if is_anom and score > 0.3:
-                    severity = (
-                        FindingSeverity.HIGH if score > 0.6 else FindingSeverity.MEDIUM
-                    )
+                    severity = FindingSeverity.HIGH if score > 0.6 else FindingSeverity.MEDIUM
                     finding = Finding(
                         id=str(uuid.uuid4()),
                         severity=severity,

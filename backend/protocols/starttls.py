@@ -2,12 +2,13 @@
 SecureMailScope — STARTTLS State Machine
 Explicit state machine for STARTTLS negotiation across SMTP, IMAP, POP3.
 """
+
 from __future__ import annotations
 
 import enum
 import logging
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from backend.models.session import ApplicationProtocol, STARTTLSState
 
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Internal state machine states
 # ---------------------------------------------------------------------------
+
 
 class _SMTPState(enum.Enum):
     INIT = "init"
@@ -55,17 +57,19 @@ class _POP3State(enum.Enum):
 # Events emitted by the state machine
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class STARTTLSEvent:
-    kind: str   # "advertised", "requested", "tls_started", "fallback_detected",
-                # "cleartext_auth", "tls_failed"
-    packet_number: Optional[int] = None
+    kind: str  # "advertised", "requested", "tls_started", "fallback_detected",
+    # "cleartext_auth", "tls_failed"
+    packet_number: int | None = None
     detail: str = ""
 
 
 # ---------------------------------------------------------------------------
 # SMTP STARTTLS State Machine
 # ---------------------------------------------------------------------------
+
 
 class SMTPSTARTTLSMachine:
     """
@@ -84,9 +88,9 @@ class SMTPSTARTTLSMachine:
     def __init__(self):
         self._state = _SMTPState.INIT
         self.events: list[STARTTLSEvent] = []
-        self.starttls_advertised_pkt: Optional[int] = None
-        self.starttls_requested_pkt: Optional[int] = None
-        self.tls_start_pkt: Optional[int] = None
+        self.starttls_advertised_pkt: int | None = None
+        self.starttls_requested_pkt: int | None = None
+        self.tls_start_pkt: int | None = None
         self.cleartext_auth_detected: bool = False
 
     def process_packet(self, pkt: dict[str, Any], pkt_num: int) -> None:
@@ -112,12 +116,6 @@ class SMTPSTARTTLSMachine:
         else:
             smtp_rsp_param = str(raw_rsp_param).upper()
 
-        raw_req_param = layers.get("smtp.req.parameter") or ""
-        if isinstance(raw_req_param, list):
-            smtp_req_param = " ".join(str(p) for p in raw_req_param).upper()
-        else:
-            smtp_req_param = str(raw_req_param).upper()
-
         # Detect TLS ClientHello (indicates TLS negotiation started)
         hs_type = layers.get("tls.handshake.type")
         if hs_type == "1":  # ClientHello
@@ -137,13 +135,20 @@ class SMTPSTARTTLSMachine:
             if ("250" in smtp_rsp_codes or smtp_rsp_code == "250") and "STARTTLS" in smtp_rsp_param:
                 self._state = _SMTPState.STARTTLS_CAPABLE
                 self.starttls_advertised_pkt = pkt_num
-                self.events.append(STARTTLSEvent("advertised", pkt_num, "Server advertised STARTTLS in EHLO response"))
+                self.events.append(
+                    STARTTLSEvent(
+                        "advertised", pkt_num, "Server advertised STARTTLS in EHLO response"
+                    )
+                )
             elif smtp_cmd in ("AUTH", "MAIL", "RCPT"):
                 # Client sent auth/mail before STARTTLS — plaintext auth
                 self._state = _SMTPState.PLAINTEXT_CONTINUE
                 self.cleartext_auth_detected = True
-                self.events.append(STARTTLSEvent("cleartext_auth", pkt_num,
-                    f"Cleartext {smtp_cmd} before TLS negotiation"))
+                self.events.append(
+                    STARTTLSEvent(
+                        "cleartext_auth", pkt_num, f"Cleartext {smtp_cmd} before TLS negotiation"
+                    )
+                )
 
         elif self._state == _SMTPState.STARTTLS_CAPABLE:
             if smtp_cmd == "STARTTLS":
@@ -154,8 +159,13 @@ class SMTPSTARTTLSMachine:
                 # Suspicious: STARTTLS available but client didn't use it
                 self._state = _SMTPState.PLAINTEXT_CONTINUE
                 self.cleartext_auth_detected = smtp_cmd in ("AUTH", "MAIL")
-                self.events.append(STARTTLSEvent("fallback_detected", pkt_num,
-                    f"Client sent {smtp_cmd} without STARTTLS — possible downgrade"))
+                self.events.append(
+                    STARTTLSEvent(
+                        "fallback_detected",
+                        pkt_num,
+                        f"Client sent {smtp_cmd} without STARTTLS — possible downgrade",
+                    )
+                )
 
         elif self._state == _SMTPState.STARTTLS_SENT:
             if "220" in smtp_rsp_codes or smtp_rsp_code == "220":
@@ -163,8 +173,11 @@ class SMTPSTARTTLSMachine:
                 self.events.append(STARTTLSEvent("tls_started", pkt_num, "Server ready for TLS"))
             elif any(c.startswith(("4", "5")) for c in smtp_rsp_codes):
                 self._state = _SMTPState.PLAINTEXT_CONTINUE
-                self.events.append(STARTTLSEvent("tls_failed", pkt_num,
-                    f"STARTTLS rejected by server ({smtp_rsp_code})"))
+                self.events.append(
+                    STARTTLSEvent(
+                        "tls_failed", pkt_num, f"STARTTLS rejected by server ({smtp_rsp_code})"
+                    )
+                )
 
     def get_starttls_state(self) -> STARTTLSState:
         if self._state == _SMTPState.TLS_ACTIVE:
@@ -188,21 +201,30 @@ class SMTPSTARTTLSMachine:
 # IMAP STARTTLS State Machine
 # ---------------------------------------------------------------------------
 
+
+def _normalize_text(val: Any) -> str:
+    if val is None:
+        return ""
+    if isinstance(val, list):
+        return " ".join(str(v) for v in val).upper().strip()
+    return str(val).upper().strip()
+
+
 class IMAPSTARTTLSMachine:
     """IMAP STARTTLS state machine."""
 
     def __init__(self):
         self._state = _IMAPState.INIT
         self.events: list[STARTTLSEvent] = []
-        self.starttls_advertised_pkt: Optional[int] = None
-        self.starttls_requested_pkt: Optional[int] = None
-        self.tls_start_pkt: Optional[int] = None
+        self.starttls_advertised_pkt: int | None = None
+        self.starttls_requested_pkt: int | None = None
+        self.tls_start_pkt: int | None = None
         self.cleartext_auth_detected: bool = False
 
     def process_packet(self, pkt: dict[str, Any], pkt_num: int) -> None:
         layers = pkt.get("_source", {}).get("layers", {})
-        imap_req = (layers.get("imap.request") or "").upper().strip()
-        imap_rsp = (layers.get("imap.response") or "").upper().strip()
+        imap_req = _normalize_text(layers.get("imap.request"))
+        imap_rsp = _normalize_text(layers.get("imap.response"))
 
         hs_type = layers.get("tls.handshake.type")
         if hs_type == "1":
@@ -214,7 +236,9 @@ class IMAPSTARTTLSMachine:
             if "CAPABILITY" in imap_rsp and "STARTTLS" in imap_rsp:
                 self._state = _IMAPState.STARTTLS_CAPABLE
                 self.starttls_advertised_pkt = pkt_num
-                self.events.append(STARTTLSEvent("advertised", pkt_num, "IMAP CAPABILITY includes STARTTLS"))
+                self.events.append(
+                    STARTTLSEvent("advertised", pkt_num, "IMAP CAPABILITY includes STARTTLS")
+                )
             elif "STARTTLS" in imap_req:
                 self._state = _IMAPState.STARTTLS_SENT
                 self.starttls_requested_pkt = pkt_num
@@ -224,18 +248,29 @@ class IMAPSTARTTLSMachine:
             if "LOGIN" in imap_req or "AUTHENTICATE" in imap_req:
                 self._state = _IMAPState.PLAINTEXT_CONTINUE
                 self.cleartext_auth_detected = True
-                self.events.append(STARTTLSEvent("cleartext_auth", pkt_num,
-                    "IMAP LOGIN/AUTHENTICATE before STARTTLS"))
+                self.events.append(
+                    STARTTLSEvent(
+                        "cleartext_auth", pkt_num, "IMAP LOGIN/AUTHENTICATE before STARTTLS"
+                    )
+                )
 
     def get_starttls_state(self) -> STARTTLSState:
         if self._state == _IMAPState.TLS_ACTIVE:
-            return STARTTLSState.NEGOTIATED if self.starttls_requested_pkt else STARTTLSState.DIRECT_TLS
+            return (
+                STARTTLSState.NEGOTIATED
+                if self.starttls_requested_pkt
+                else STARTTLSState.DIRECT_TLS
+            )
         if self._state == _IMAPState.STARTTLS_CAPABLE:
             return STARTTLSState.ADVERTISED
         if self._state == _IMAPState.STARTTLS_SENT:
             return STARTTLSState.REQUESTED
         if self._state == _IMAPState.PLAINTEXT_CONTINUE:
-            return STARTTLSState.SUSPICIOUS_FALLBACK if self.starttls_advertised_pkt else STARTTLSState.NO_TLS
+            return (
+                STARTTLSState.SUSPICIOUS_FALLBACK
+                if self.starttls_advertised_pkt
+                else STARTTLSState.NO_TLS
+            )
         return STARTTLSState.NO_TLS
 
 
@@ -243,21 +278,22 @@ class IMAPSTARTTLSMachine:
 # POP3 STARTTLS State Machine
 # ---------------------------------------------------------------------------
 
+
 class POP3STARTTLSMachine:
     """POP3 STLS (STARTTLS equivalent) state machine."""
 
     def __init__(self):
         self._state = _POP3State.INIT
         self.events: list[STARTTLSEvent] = []
-        self.starttls_advertised_pkt: Optional[int] = None
-        self.starttls_requested_pkt: Optional[int] = None
-        self.tls_start_pkt: Optional[int] = None
+        self.starttls_advertised_pkt: int | None = None
+        self.starttls_requested_pkt: int | None = None
+        self.tls_start_pkt: int | None = None
         self.cleartext_auth_detected: bool = False
 
     def process_packet(self, pkt: dict[str, Any], pkt_num: int) -> None:
         layers = pkt.get("_source", {}).get("layers", {})
-        pop_req = (layers.get("pop.request") or "").upper().strip()
-        pop_rsp = (layers.get("pop.response") or "").upper().strip()
+        pop_req = _normalize_text(layers.get("pop.request"))
+        pop_rsp = _normalize_text(layers.get("pop.response"))
 
         hs_type = layers.get("tls.handshake.type")
         if hs_type == "1":
@@ -279,27 +315,37 @@ class POP3STARTTLSMachine:
             self.events.append(STARTTLSEvent("requested", pkt_num, "Client sent POP3 STLS"))
 
         if self._state == _POP3State.STLS_CAPABLE:
-            if pop_req.startswith("USER") or pop_req.startswith("PASS") or pop_req.startswith("AUTH"):
+            if pop_req.startswith(("USER", "PASS", "AUTH")):
                 self._state = _POP3State.PLAINTEXT_CONTINUE
                 self.cleartext_auth_detected = True
-                self.events.append(STARTTLSEvent("cleartext_auth", pkt_num,
-                    "POP3 USER/PASS/AUTH before STLS"))
+                self.events.append(
+                    STARTTLSEvent("cleartext_auth", pkt_num, "POP3 USER/PASS/AUTH before STLS")
+                )
 
     def get_starttls_state(self) -> STARTTLSState:
         if self._state == _POP3State.TLS_ACTIVE:
-            return STARTTLSState.NEGOTIATED if self.starttls_requested_pkt else STARTTLSState.DIRECT_TLS
+            return (
+                STARTTLSState.NEGOTIATED
+                if self.starttls_requested_pkt
+                else STARTTLSState.DIRECT_TLS
+            )
         if self._state == _POP3State.STLS_CAPABLE:
             return STARTTLSState.ADVERTISED
         if self._state == _POP3State.STLS_SENT:
             return STARTTLSState.REQUESTED
         if self._state == _POP3State.PLAINTEXT_CONTINUE:
-            return STARTTLSState.SUSPICIOUS_FALLBACK if self.starttls_advertised_pkt else STARTTLSState.NO_TLS
+            return (
+                STARTTLSState.SUSPICIOUS_FALLBACK
+                if self.starttls_advertised_pkt
+                else STARTTLSState.NO_TLS
+            )
         return STARTTLSState.NO_TLS
 
 
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
+
 
 def make_starttls_machine(protocol: ApplicationProtocol):
     """Return the appropriate STARTTLS machine for the protocol."""

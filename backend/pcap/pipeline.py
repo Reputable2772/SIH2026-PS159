@@ -2,13 +2,15 @@
 SecureMailScope — Main Analysis Pipeline
 Orchestrates PCAP → sessions → TLS → certificates → rules → ML → results.
 """
+
 from __future__ import annotations
 
+import contextlib
 import logging
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from backend.anomaly.detector import get_detector
 from backend.certificates.analyser import (
@@ -54,7 +56,7 @@ from backend.tls.analyser import extract_tls_handshake
 logger = logging.getLogger(__name__)
 
 
-def analyse_pcap(pcap_path: str, analysis_id: Optional[str] = None) -> AnalysisResult:
+def analyse_pcap(pcap_path: str, analysis_id: str | None = None) -> AnalysisResult:
     """
     Full analysis pipeline for a single PCAP file.
     Returns a complete AnalysisResult with all sessions, findings, and scores.
@@ -147,12 +149,13 @@ def analyse_pcap(pcap_path: str, analysis_id: Optional[str] = None) -> AnalysisR
 # Session Builder
 # ---------------------------------------------------------------------------
 
+
 def _build_session(
     stream_id: str,
     packets: list[dict[str, Any]],
     pcap_path: str,
     analysis_id: str,
-) -> Optional[TCPSession]:
+) -> TCPSession | None:
     """Build a TCPSession from a stream's packet list."""
     if not packets:
         return None
@@ -187,8 +190,7 @@ def _build_session(
     if session.protocol == ApplicationProtocol.UNKNOWN:
         # Only keep if TLS handshake on interesting ports
         has_tls = any(
-            p.get("_source", {}).get("layers", {}).get("tls.handshake.type")
-            for p in packets
+            p.get("_source", {}).get("layers", {}).get("tls.handshake.type") for p in packets
         )
         if not has_tls:
             return None
@@ -220,14 +222,14 @@ def _build_session(
 
         # Certificate extraction (TLS ≤ 1.2 only)
         if tls_hs.tls_version != TLSVersion.TLS_1_3:
-            certs, obs, note = extract_certs_from_tshark_stream(packets)
+            _, obs, note = extract_certs_from_tshark_stream(packets)
             tls_hs.cert_observability = obs
             tls_hs.cert_observability_note = note
 
             # Try to extract certificate DER via tshark export
             # (best-effort; may be empty if not decoded)
             cert_ders = extract_certificates_from_pcap(pcap_path)
-            for _fname, der in cert_ders.items():
+            for der in cert_ders.values():
                 cert_info = parse_certificate_der(der)
                 if cert_info:
                     tls_hs.certificates.append(cert_info)
@@ -237,22 +239,25 @@ def _build_session(
                     cert_signals = assess_cert_risk(cert_info)
                     for sig in cert_signals:
                         import uuid as _uuid
-                        session.findings.append(Finding(
-                            id=str(_uuid.uuid4()),
-                            severity=FindingSeverity(sig["severity"]),
-                            category=FindingCategory(sig["category"]),
-                            title=sig["title"],
-                            description=sig["detail"],
-                            evidence=Evidence(
-                                pcap_file=pcap_path,
-                                session_id=session_id,
-                                packet_numbers=[],
-                                field="x509_certificate",
-                                observed_value=sig.get("detail"),
-                                extra={"cert_sha256": cert_info.fingerprint_sha256},
-                            ),
-                            recommendation=sig["recommendation"],
-                        ))
+
+                        session.findings.append(
+                            Finding(
+                                id=str(_uuid.uuid4()),
+                                severity=FindingSeverity(sig["severity"]),
+                                category=FindingCategory(sig["category"]),
+                                title=sig["title"],
+                                description=sig["detail"],
+                                evidence=Evidence(
+                                    pcap_file=pcap_path,
+                                    session_id=session_id,
+                                    packet_numbers=[],
+                                    field="x509_certificate",
+                                    observed_value=sig.get("detail"),
+                                    extra={"cert_sha256": cert_info.fingerprint_sha256},
+                                ),
+                                recommendation=sig["recommendation"],
+                            )
+                        )
 
     return session
 
@@ -260,6 +265,7 @@ def _build_session(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _extract_5tuple(packets: list[dict]) -> tuple[str, int, str, int]:
     for pkt in packets[:5]:
@@ -281,10 +287,8 @@ def _extract_times(packets: list[dict]) -> list[float]:
     for pkt in packets:
         t = pkt.get("_source", {}).get("layers", {}).get("frame.time_epoch")
         if t:
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 times.append(float(t))
-            except (ValueError, TypeError):
-                pass
     return times
 
 
@@ -300,24 +304,29 @@ def _collect_banners(packets: list[dict], protocol: ApplicationProtocol) -> list
     banners: list[str] = []
     for pkt in packets:
         layers = pkt.get("_source", {}).get("layers", {})
+        keys = ()
         if protocol == ApplicationProtocol.SMTP:
-            for key in ("smtp.rsp.parameter", "smtp.req.command"):
-                val = layers.get(key)
-                if val:
-                    banners.append(str(val)[:120])
+            keys = ("smtp.rsp.parameter", "smtp.req.command")
         elif protocol == ApplicationProtocol.IMAP:
-            for key in ("imap.response", "imap.request"):
-                val = layers.get(key)
-                if val:
-                    banners.append(str(val)[:120])
+            keys = ("imap.response", "imap.request")
         elif protocol == ApplicationProtocol.POP3:
-            for key in ("pop.response", "pop.request"):
-                val = layers.get(key)
-                if val:
-                    banners.append(str(val)[:120])
+            keys = ("pop.response", "pop.request")
+
+        for key in keys:
+            val = layers.get(key)
+            if val:
+                if isinstance(val, list):
+                    for item in val:
+                        s = str(item).strip()
+                        if s:
+                            banners.append(s[:120])
+                else:
+                    s = str(val).strip()
+                    if s:
+                        banners.append(s[:120])
         if len(banners) >= 10:
             break
-    return banners
+    return banners[:10]
 
 
 def _build_protocol_summary(sessions: list[TCPSession]) -> ProtocolSummary:
@@ -357,8 +366,7 @@ def _build_protocol_summary(sessions: list[TCPSession]) -> ProtocolSummary:
 def _collect_limitations(sessions: list[TCPSession]) -> list[str]:
     limitations = []
     tls13_count = sum(
-        1 for s in sessions
-        if s.tls_handshake and s.tls_handshake.tls_version == TLSVersion.TLS_1_3
+        1 for s in sessions if s.tls_handshake and s.tls_handshake.tls_version == TLSVersion.TLS_1_3
     )
     if tls13_count > 0:
         limitations.append(

@@ -2,14 +2,15 @@
 SecureMailScope — FastAPI Backend
 REST API exposing PCAP analysis, session data, and report generation.
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
 import tempfile
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,7 +19,11 @@ from pydantic import BaseModel
 
 from backend.models.session import AnalysisResult
 from backend.pcap.pipeline import analyse_pcap
-from backend.reporting.generator import generate_html_report, generate_json_report, generate_pdf_report
+from backend.reporting.generator import (
+    generate_html_report,
+    generate_json_report,
+    generate_pdf_report,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +31,28 @@ logger = logging.getLogger(__name__)
 # App Setup
 # ---------------------------------------------------------------------------
 
+_background_tasks: set[asyncio.Task] = set()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager that preloads demo PCAPs on startup."""
+    for pcap in _get_demo_pcaps():
+        aid = str(uuid.uuid4())
+        _analysis_status[aid] = "pending"
+        task = asyncio.create_task(_run_analysis(aid, str(pcap)))
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
+    yield
+    for task in list(_background_tasks):
+        task.cancel()
+
+
 app = FastAPI(
     title="SecureMailScope API",
     description="AI-Assisted Cryptographic Security Posture Assessment for Secure Email Communications",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -55,6 +78,7 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 # Models
 # ---------------------------------------------------------------------------
 
+
 class AnalysisRequest(BaseModel):
     pcap_path: str
 
@@ -62,12 +86,13 @@ class AnalysisRequest(BaseModel):
 class AnalysisStatus(BaseModel):
     analysis_id: str
     status: str
-    error: Optional[str] = None
+    error: str | None = None
 
 
 # ---------------------------------------------------------------------------
 # PCAP Upload & Analysis
 # ---------------------------------------------------------------------------
+
 
 @app.post("/api/analysis/upload", response_model=AnalysisStatus)
 async def upload_and_analyse(
@@ -104,7 +129,16 @@ async def analyse_file(
     """Analyse a PCAP file by server-side path (for demo PCAPs)."""
     pcap_path = Path(request.pcap_path)
     if not pcap_path.exists():
-        raise HTTPException(status_code=404, detail=f"PCAP not found: {request.pcap_path}")
+        # Check DEMO_PCAPS_DIR
+        alt_demo = DEMO_PCAPS_DIR / pcap_path.name
+        if alt_demo.exists():
+            pcap_path = alt_demo
+        else:
+            alt_repo = Path(__file__).parent.parent.parent / request.pcap_path
+            if alt_repo.exists():
+                pcap_path = alt_repo
+            else:
+                raise HTTPException(status_code=404, detail=f"PCAP not found: {request.pcap_path}")
 
     analysis_id = str(uuid.uuid4())
     _analysis_status[analysis_id] = "pending"
@@ -126,12 +160,15 @@ async def get_analysis_status(analysis_id: str):
 
 @app.get("/api/analysis/{analysis_id}")
 async def get_analysis(analysis_id: str):
-    if analysis_id not in _analyses:
-        status = _analysis_status.get(analysis_id, "not_found")
-        if status in ("pending", "running"):
-            return JSONResponse({"status": status, "analysis_id": analysis_id})
-        raise HTTPException(status_code=404, detail="Analysis not found or failed")
-    result = _analyses[analysis_id]
+    status = _analysis_status.get(analysis_id)
+    if not status:
+        for aid, st in _analysis_status.items():
+            if aid.startswith(analysis_id):
+                status = st
+                break
+    if status in ("pending", "running"):
+        return JSONResponse({"status": status, "analysis_id": analysis_id})
+    result = _get_result_or_404(analysis_id)
     return result.model_dump(mode="json")
 
 
@@ -153,21 +190,23 @@ async def get_session(analysis_id: str, session_id: str):
 @app.get("/api/analysis/{analysis_id}/findings")
 async def get_findings(
     analysis_id: str,
-    severity: Optional[str] = None,
-    category: Optional[str] = None,
+    severity: str | None = None,
+    category: str | None = None,
 ):
     result = _get_result_or_404(analysis_id)
     findings = result.all_findings
     if severity:
         sev_lower = severity.lower()
         findings = [
-            f for f in findings
+            f
+            for f in findings
             if f.severity.value.lower() == sev_lower or f.severity.name.lower() == sev_lower
         ]
     if category:
         cat_lower = category.lower()
         findings = [
-            f for f in findings
+            f
+            for f in findings
             if f.category.value.lower() == cat_lower or f.category.name.lower() == cat_lower
         ]
     return [f.model_dump(mode="json") for f in findings]
@@ -177,29 +216,40 @@ async def get_findings(
 # Demo PCAPs
 # ---------------------------------------------------------------------------
 
+
+def _get_demo_pcaps() -> list[Path]:
+    if not DEMO_PCAPS_DIR.exists():
+        return []
+    files: list[Path] = []
+    for ext in ("*.pcap", "*.pcapng", "*.cap"):
+        files.extend(DEMO_PCAPS_DIR.glob(ext))
+    return sorted(files, key=lambda p: p.name)
+
+
 @app.get("/api/demo/pcaps")
 async def list_demo_pcaps():
     """List available demo PCAP files."""
-    if not DEMO_PCAPS_DIR.exists():
-        return []
-    pcaps = []
-    for p in sorted(DEMO_PCAPS_DIR.glob("*.pcap")):
-        pcaps.append({
+    return [
+        {
             "filename": p.name,
             "path": str(p),
             "size_bytes": p.stat().st_size,
-        })
-    return pcaps
+        }
+        for p in _get_demo_pcaps()
+    ]
 
 
 @app.post("/api/demo/run")
 async def run_demo(background_tasks: BackgroundTasks = BackgroundTasks()):
     """Run analysis on all demo PCAPs."""
-    if not DEMO_PCAPS_DIR.exists():
-        raise HTTPException(status_code=503, detail="Demo PCAPs not generated yet. Run: just gen-pcaps")
+    all_pcaps = _get_demo_pcaps()
+    if not all_pcaps:
+        raise HTTPException(
+            status_code=503, detail="Demo PCAPs not generated yet. Run: just gen-pcaps"
+        )
 
     demo_ids = []
-    for pcap in sorted(DEMO_PCAPS_DIR.glob("*.pcap")):
+    for pcap in all_pcaps:
         aid = str(uuid.uuid4())
         _analysis_status[aid] = "pending"
         background_tasks.add_task(_run_analysis, aid, str(pcap))
@@ -212,6 +262,7 @@ async def run_demo(background_tasks: BackgroundTasks = BackgroundTasks()):
 # Reports
 # ---------------------------------------------------------------------------
 
+
 @app.get("/api/analysis/{analysis_id}/report/json")
 async def report_json(analysis_id: str):
     result = _get_result_or_404(analysis_id)
@@ -221,6 +272,7 @@ async def report_json(analysis_id: str):
 @app.get("/api/analysis/{analysis_id}/report/html")
 async def report_html(analysis_id: str):
     from fastapi.responses import HTMLResponse
+
     result = _get_result_or_404(analysis_id)
     html = generate_html_report(result)
     return HTMLResponse(html)
@@ -231,17 +283,22 @@ async def report_pdf(analysis_id: str):
     result = _get_result_or_404(analysis_id)
     pdf_path = UPLOAD_DIR / f"{analysis_id}_report.pdf"
     generate_pdf_report(result, str(pdf_path))
-    return FileResponse(str(pdf_path), media_type="application/pdf",
-                        filename=f"securemailscope_{analysis_id[:8]}.pdf")
+    return FileResponse(
+        str(pdf_path),
+        media_type="application/pdf",
+        filename=f"securemailscope_{analysis_id[:8]}.pdf",
+    )
 
 
 # ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------
 
+
 @app.get("/api/health")
 async def health():
     import shutil
+
     return {
         "status": "ok",
         "version": "0.1.0",
@@ -259,6 +316,28 @@ async def list_analyses():
             "pcap": _analyses[aid].capture.pcap_filename if aid in _analyses else None,
             "risk_score": _analyses[aid].risk_score.score if aid in _analyses else None,
             "risk_level": _analyses[aid].risk_score.level if aid in _analyses else None,
+            "analyzed_at": _analyses[aid].capture.analyzed_at.isoformat()
+            if aid in _analyses
+            else None,
+            "session_count": len(_analyses[aid].sessions) if aid in _analyses else 0,
+            "finding_count": len(_analyses[aid].all_findings) if aid in _analyses else 0,
+            "packet_count": _analyses[aid].capture.packet_count if aid in _analyses else 0,
+            "critical_count": _analyses[aid].risk_score.critical_count if aid in _analyses else 0,
+            "high_count": _analyses[aid].risk_score.high_count if aid in _analyses else 0,
+            "sessions": [
+                {
+                    "session_id": s.session_id,
+                    "protocol": s.protocol,
+                    "src_ip": s.src_ip,
+                    "src_port": s.src_port,
+                    "dst_ip": s.dst_ip,
+                    "dst_port": s.dst_port,
+                    "risk_level": s.session_risk_level,
+                }
+                for s in _analyses[aid].sessions
+            ]
+            if aid in _analyses
+            else [],
         }
         for aid in _analysis_status
     ]
@@ -268,10 +347,14 @@ async def list_analyses():
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_result_or_404(analysis_id: str) -> AnalysisResult:
-    if analysis_id not in _analyses:
-        raise HTTPException(status_code=404, detail="Analysis not found or still running")
-    return _analyses[analysis_id]
+    if analysis_id in _analyses:
+        return _analyses[analysis_id]
+    for aid, res in _analyses.items():
+        if aid.startswith(analysis_id):
+            return res
+    raise HTTPException(status_code=404, detail="Analysis not found or still running")
 
 
 async def _run_analysis(analysis_id: str, pcap_path: str) -> None:
@@ -284,6 +367,6 @@ async def _run_analysis(analysis_id: str, pcap_path: str) -> None:
         _analysis_status[analysis_id] = "done"
         logger.info("Analysis %s complete: score=%s", analysis_id, result.risk_score.score)
     except Exception as exc:
-        logger.exception("Analysis %s failed: %s", analysis_id, exc)
+        logger.exception("Analysis %s failed", analysis_id)
         _analysis_status[analysis_id] = "error"
         _analysis_errors[analysis_id] = str(exc)

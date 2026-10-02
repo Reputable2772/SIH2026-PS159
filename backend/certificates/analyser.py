@@ -3,20 +3,21 @@ SecureMailScope — X.509 Certificate Analyser
 Extracts and validates certificates observable in the PCAP.
 Handles TLS 1.3 observability limitation explicitly.
 """
+
 from __future__ import annotations
 
 import base64
 import logging
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import (
     dsa,
     ec,
-    ed25519,
     ed448,
+    ed25519,
     rsa,
 )
 from cryptography.x509.oid import ExtensionOID, NameOID
@@ -30,7 +31,8 @@ logger = logging.getLogger(__name__)
 # Certificate Parsing
 # ---------------------------------------------------------------------------
 
-def parse_certificate_der(der_bytes: bytes) -> Optional[CertificateInfo]:
+
+def parse_certificate_der(der_bytes: bytes) -> CertificateInfo | None:
     """
     Parse a DER-encoded X.509 certificate.
     Returns None if parsing fails.
@@ -42,7 +44,7 @@ def parse_certificate_der(der_bytes: bytes) -> Optional[CertificateInfo]:
         logger.warning("Failed to parse certificate DER: %s", exc)
         return None
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Fingerprint (always computable from DER)
     fp = cert.fingerprint(hashes.SHA256()).hex()
@@ -112,7 +114,7 @@ def parse_certificate_der(der_bytes: bytes) -> Optional[CertificateInfo]:
     )
 
 
-def _get_name_attr(name: x509.Name, oid: x509.ObjectIdentifier) -> Optional[str]:
+def _get_name_attr(name: x509.Name, oid: x509.ObjectIdentifier) -> str | None:
     try:
         attrs = name.get_attributes_for_oid(oid)
         return attrs[0].value if attrs else None
@@ -150,9 +152,10 @@ def _parse_public_key(pub_key: Any) -> PublicKeyInfo:
 # Certificate extraction from tshark output
 # ---------------------------------------------------------------------------
 
+
 def extract_certs_from_tshark_stream(
     stream_packets: list[dict[str, Any]],
-) -> tuple[list[CertificateInfo], ObservabilityStatus, Optional[str]]:
+) -> tuple[list[CertificateInfo], ObservabilityStatus, str | None]:
     """
     Try to extract certificates from a stream's tshark packets.
 
@@ -162,10 +165,9 @@ def extract_certs_from_tshark_stream(
     For TLS 1.3, certs will be empty with NOT_OBSERVABLE status and explanation.
     For TLS ≤ 1.2, certs may be populated if tshark decoded the Certificate message.
     """
-    from backend.tls.analyser import parse_tls_version, TLSVersion
+    from backend.tls.analyser import TLSVersion, parse_tls_version
 
     tls_version = TLSVersion.UNKNOWN
-    cert_ders: list[bytes] = []
     has_cert_message = False
 
     for pkt in stream_packets:
@@ -201,9 +203,13 @@ def extract_certs_from_tshark_stream(
     if has_cert_message:
         # Signal that a certificate message was seen but we may not have DER bytes
         # from this path — the pcap/extractor.py export-objects approach handles DER
-        return [], ObservabilityStatus.PARTIALLY_OBSERVABLE, (
-            "Certificate message observed in stream. "
-            "DER bytes extracted via tshark export-objects if available."
+        return (
+            [],
+            ObservabilityStatus.PARTIALLY_OBSERVABLE,
+            (
+                "Certificate message observed in stream. "
+                "DER bytes extracted via tshark export-objects if available."
+            ),
         )
 
     return [], ObservabilityStatus.NOT_OBSERVABLE, "No TLS Certificate message observed in stream."
@@ -212,7 +218,7 @@ def extract_certs_from_tshark_stream(
 def create_not_observable_cert_placeholder(tls_version: str) -> None:
     """Explicitly do NOT create a placeholder certificate for TLS 1.3.
     Callers should check observability and display the note in the UI instead."""
-    pass  # intentionally empty — we never fabricate certificate data
+    # intentionally empty — we never fabricate certificate data
 
 
 # ---------------------------------------------------------------------------
@@ -224,7 +230,12 @@ MIN_DSA_KEY_BITS = 2048
 MIN_EC_KEY_BITS = 224
 
 WEAK_SIGNATURE_ALGORITHMS = {
-    "md5", "md2", "sha1", "md5withrsa", "sha1withrsa", "sha1withecdsa",
+    "md5",
+    "md2",
+    "sha1",
+    "md5withrsa",
+    "sha1withrsa",
+    "sha1withecdsa",
     "md5withrsa encryption",
 }
 
@@ -240,81 +251,97 @@ def assess_cert_risk(cert: CertificateInfo) -> list[dict[str, Any]]:
 
     # Expiry
     if cert.is_expired:
-        signals.append({
-            "severity": "critical",
-            "category": "expired_certificate",
-            "title": "Certificate is expired",
-            "detail": f"Not valid after: {cert.not_after}",
-            "recommendation": "Replace the certificate immediately.",
-        })
+        signals.append(
+            {
+                "severity": "critical",
+                "category": "expired_certificate",
+                "title": "Certificate is expired",
+                "detail": f"Not valid after: {cert.not_after}",
+                "recommendation": "Replace the certificate immediately.",
+            }
+        )
     elif cert.days_until_expiry is not None and cert.days_until_expiry <= SOON_EXPIRY_DAYS:
-        signals.append({
-            "severity": "high",
-            "category": "invalid_certificate",
-            "title": f"Certificate expiring soon ({cert.days_until_expiry} days)",
-            "detail": f"Not valid after: {cert.not_after}",
-            "recommendation": "Renew the certificate before expiry.",
-        })
+        signals.append(
+            {
+                "severity": "high",
+                "category": "invalid_certificate",
+                "title": f"Certificate expiring soon ({cert.days_until_expiry} days)",
+                "detail": f"Not valid after: {cert.not_after}",
+                "recommendation": "Renew the certificate before expiry.",
+            }
+        )
 
     # Weak public key
     if cert.public_key:
         pk = cert.public_key
         if pk.algorithm == "RSA" and pk.key_size_bits and pk.key_size_bits < MIN_RSA_KEY_BITS:
-            signals.append({
-                "severity": "high",
-                "category": "weak_key",
-                "title": f"Weak RSA key ({pk.key_size_bits} bits)",
-                "detail": f"Key size {pk.key_size_bits} < {MIN_RSA_KEY_BITS} minimum.",
-                "recommendation": f"Use RSA keys of at least {MIN_RSA_KEY_BITS} bits.",
-            })
+            signals.append(
+                {
+                    "severity": "high",
+                    "category": "weak_key",
+                    "title": f"Weak RSA key ({pk.key_size_bits} bits)",
+                    "detail": f"Key size {pk.key_size_bits} < {MIN_RSA_KEY_BITS} minimum.",
+                    "recommendation": f"Use RSA keys of at least {MIN_RSA_KEY_BITS} bits.",
+                }
+            )
         if pk.algorithm == "DSA" and pk.key_size_bits and pk.key_size_bits < MIN_DSA_KEY_BITS:
-            signals.append({
-                "severity": "high",
-                "category": "weak_key",
-                "title": f"Weak DSA key ({pk.key_size_bits} bits)",
-                "detail": f"Key size {pk.key_size_bits} < {MIN_DSA_KEY_BITS} minimum.",
-                "recommendation": f"Migrate to ECDSA (P-256 or better) or RSA ≥ {MIN_RSA_KEY_BITS} bits.",
-            })
+            signals.append(
+                {
+                    "severity": "high",
+                    "category": "weak_key",
+                    "title": f"Weak DSA key ({pk.key_size_bits} bits)",
+                    "detail": f"Key size {pk.key_size_bits} < {MIN_DSA_KEY_BITS} minimum.",
+                    "recommendation": f"Migrate to ECDSA (P-256 or better) or RSA ≥ {MIN_RSA_KEY_BITS} bits.",
+                }
+            )
         if pk.algorithm == "EC" and pk.key_size_bits and pk.key_size_bits < MIN_EC_KEY_BITS:
-            signals.append({
-                "severity": "high",
-                "category": "weak_key",
-                "title": f"Weak EC key ({pk.key_size_bits} bits on {pk.curve})",
-                "detail": f"Key size {pk.key_size_bits} < {MIN_EC_KEY_BITS} minimum.",
-                "recommendation": "Use P-256 or stronger EC curves.",
-            })
+            signals.append(
+                {
+                    "severity": "high",
+                    "category": "weak_key",
+                    "title": f"Weak EC key ({pk.key_size_bits} bits on {pk.curve})",
+                    "detail": f"Key size {pk.key_size_bits} < {MIN_EC_KEY_BITS} minimum.",
+                    "recommendation": "Use P-256 or stronger EC curves.",
+                }
+            )
         # RSA public exponent check
         if pk.algorithm == "RSA" and pk.public_exponent == 3:
-            signals.append({
-                "severity": "high",
-                "category": "weak_key",
-                "title": "RSA public exponent e=3 (low exponent attack risk)",
-                "detail": "RSA with e=3 has known attack vectors.",
-                "recommendation": "Use e=65537 (0x10001).",
-            })
+            signals.append(
+                {
+                    "severity": "high",
+                    "category": "weak_key",
+                    "title": "RSA public exponent e=3 (low exponent attack risk)",
+                    "detail": "RSA with e=3 has known attack vectors.",
+                    "recommendation": "Use e=65537 (0x10001).",
+                }
+            )
 
     # Weak signature algorithm
     if cert.signature_algorithm:
         sig_lower = cert.signature_algorithm.lower()
         for weak in WEAK_SIGNATURE_ALGORITHMS:
             if weak in sig_lower:
-                signals.append({
-                    "severity": "high",
-                    "category": "weak_signature",
-                    "title": f"Weak signature algorithm: {cert.signature_algorithm}",
-                    "detail": f"Algorithm {cert.signature_algorithm} is deprecated.",
-                    "recommendation": "Use SHA-256 or stronger signature algorithms.",
-                })
+                signals.append(
+                    {
+                        "severity": "high",
+                        "category": "weak_signature",
+                        "title": f"Weak signature algorithm: {cert.signature_algorithm}",
+                        "detail": f"Algorithm {cert.signature_algorithm} is deprecated.",
+                        "recommendation": "Use SHA-256 or stronger signature algorithms.",
+                    }
+                )
                 break
 
     # Self-signed
     if cert.is_self_signed:
-        signals.append({
-            "severity": "medium",
-            "category": "invalid_certificate",
-            "title": "Certificate is self-signed",
-            "detail": "No trusted CA issued this certificate.",
-            "recommendation": "Obtain a certificate from a trusted Certificate Authority.",
-        })
+        signals.append(
+            {
+                "severity": "medium",
+                "category": "invalid_certificate",
+                "title": "Certificate is self-signed",
+                "detail": "No trusted CA issued this certificate.",
+                "recommendation": "Obtain a certificate from a trusted Certificate Authority.",
+            }
+        )
 
     return signals

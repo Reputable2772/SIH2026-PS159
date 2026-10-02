@@ -2,10 +2,11 @@
 SecureMailScope — Report Generator
 Produces JSON, HTML, and PDF forensic reports.
 """
+
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -22,11 +23,12 @@ TEMPLATES_DIR = Path(__file__).parent / "templates"
 # JSON Report
 # ---------------------------------------------------------------------------
 
+
 def generate_json_report(result: AnalysisResult) -> dict[str, Any]:
     """Generate a machine-readable JSON report."""
     data = result.model_dump(mode="json")
     data["report_metadata"] = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "tool": "SecureMailScope",
         "version": "0.1.0",
         "disclaimer": (
@@ -262,13 +264,14 @@ def generate_html_report(result: AnalysisResult) -> str:
     return template.render(
         result=result,
         score_color=score_color,
-        now=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        now=datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC"),
     )
 
 
 # ---------------------------------------------------------------------------
 # PDF Report
 # ---------------------------------------------------------------------------
+
 
 def _latin1_safe(s: str) -> str:
     """Sanitize strings for built-in PDF Helvetica font (latin-1 only)."""
@@ -305,10 +308,26 @@ def generate_pdf_report(result: AnalysisResult, output_path: str) -> str:
 
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(139, 148, 158)
-    pdf.cell(0, 5, _latin1_safe(f"File: {result.capture.pcap_filename}"), new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 5, _latin1_safe(f"SHA-256: {result.capture.sha256_hash}"), new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 5, _latin1_safe(f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"), new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 5, _latin1_safe("SecureMailScope v0.1.0 -- SIH 2026 Prototype (PS 26159)"), new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(
+        0, 5, _latin1_safe(f"File: {result.capture.pcap_filename}"), new_x="LMARGIN", new_y="NEXT"
+    )
+    pdf.cell(
+        0, 5, _latin1_safe(f"SHA-256: {result.capture.sha256_hash}"), new_x="LMARGIN", new_y="NEXT"
+    )
+    pdf.cell(
+        0,
+        5,
+        _latin1_safe(f"Generated: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}"),
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
+    pdf.cell(
+        0,
+        5,
+        _latin1_safe("SecureMailScope v0.1.0 -- SIH 2026 Prototype (PS 26159)"),
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
     pdf.ln(5)
 
     # Score
@@ -323,10 +342,22 @@ def generate_pdf_report(result: AnalysisResult, output_path: str) -> str:
         pdf.set_text_color(240, 136, 62)
     else:
         pdf.set_text_color(218, 54, 51)
-    pdf.cell(0, 14, _latin1_safe(f"{score} / 100  ({result.risk_score.level} RISK)"), new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(
+        0,
+        14,
+        _latin1_safe(f"{score} / 100  ({result.risk_score.level} RISK)"),
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
     pdf.set_text_color(139, 148, 158)
     pdf.set_font("Helvetica", "I", 8)
-    pdf.cell(0, 5, _latin1_safe("NOT an official NIST/BIS/NTRO score -- prototype methodology only."), new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(
+        0,
+        5,
+        _latin1_safe("NOT an official NIST/BIS/NTRO score -- prototype methodology only."),
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
     pdf.ln(4)
 
     # Finding counts
@@ -335,7 +366,15 @@ def generate_pdf_report(result: AnalysisResult, output_path: str) -> str:
     pdf.cell(0, 7, "Finding Summary", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 10)
     rs = result.risk_score
-    pdf.cell(0, 6, _latin1_safe(f"Critical: {rs.critical_count}  |  High: {rs.high_count}  |  Medium: {rs.medium_count}  |  Low: {rs.low_count}  |  ML Anomalies: {rs.ml_anomaly_count}"), new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(
+        0,
+        6,
+        _latin1_safe(
+            f"Critical: {rs.critical_count}  |  High: {rs.high_count}  |  Medium: {rs.medium_count}  |  Low: {rs.low_count}  |  ML Anomalies: {rs.ml_anomaly_count}"
+        ),
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
     pdf.ln(4)
 
     # Capture metadata
@@ -413,13 +452,19 @@ def generate_pdf_report(result: AnalysisResult, output_path: str) -> str:
     pdf.set_text_color(121, 192, 255)
     pdf.cell(0, 6, "TLS 1.3 Certificate Observability Limitation", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "I", 8)
-    pdf.multi_cell(0, 4, _latin1_safe(
-        "In TLS 1.3 (RFC 8446), the Certificate message is encrypted during the handshake. "
-        "Passive PCAP analysis without session keys (SSLKEYLOGFILE) cannot extract server X.509 "
-        "certificates from TLS 1.3 sessions. This report correctly identifies this limitation "
-        "rather than fabricating certificate information. TLS version and cipher suite remain "
-        "observable from the unencrypted ClientHello/ServerHello messages."
-    ), new_x="LMARGIN", new_y="NEXT")
+    pdf.multi_cell(
+        0,
+        4,
+        _latin1_safe(
+            "In TLS 1.3 (RFC 8446), the Certificate message is encrypted during the handshake. "
+            "Passive PCAP analysis without session keys (SSLKEYLOGFILE) cannot extract server X.509 "
+            "certificates from TLS 1.3 sessions. This report correctly identifies this limitation "
+            "rather than fabricating certificate information. TLS version and cipher suite remain "
+            "observable from the unencrypted ClientHello/ServerHello messages."
+        ),
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
 
     pdf.output(output_path)
     return output_path

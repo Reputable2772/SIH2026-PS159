@@ -2,6 +2,7 @@
 SecureMailScope — Risk Scoring Engine
 Deterministic composite risk score — NOT an official NIST/BIS/NTRO score.
 """
+
 from __future__ import annotations
 
 import logging
@@ -34,7 +35,7 @@ RISK_LEVELS = [
     (70, "LOW"),
     (50, "MEDIUM"),
     (30, "HIGH"),
-    (0,  "CRITICAL"),
+    (0, "CRITICAL"),
 ]
 
 
@@ -51,7 +52,7 @@ def compute_risk_score(
 ) -> RiskScore:
     """
     Compute the SecureMailScope Composite Risk Score across all sessions.
-    
+
     The score starts at 100 and deductions are applied per finding.
     Positive controls (TLS 1.3, FS, valid certs) partially restore score.
     Score is clamped to [0, 100].
@@ -100,12 +101,15 @@ def compute_risk_score(
         rationale.append(f"{ml_count} ML anomaly finding(s): -{d:.1f}")
 
     # Positive adjustments
-    from backend.models.session import TLSVersion, ForwardSecrecyStatus
+    from backend.models.session import ForwardSecrecyStatus, TLSVersion
+
     for session in sessions:
         if session.tls_handshake:
             if session.tls_handshake.tls_version == TLSVersion.TLS_1_3:
                 score += w["tls_13_bonus"]
-                rationale.append(f"TLS 1.3 in session {session.session_id[-8:]}: +{w['tls_13_bonus']:.1f}")
+                rationale.append(
+                    f"TLS 1.3 in session {session.session_id[-8:]}: +{w['tls_13_bonus']:.1f}"
+                )
             if session.tls_handshake.forward_secrecy == ForwardSecrecyStatus.YES:
                 score += w["forward_secrecy_bonus"]
 

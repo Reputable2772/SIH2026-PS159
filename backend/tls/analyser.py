@@ -3,10 +3,11 @@ SecureMailScope — TLS Handshake Analyser
 Extracts TLS version, cipher suite, key exchange, and JA3 fingerprint
 from tshark-decoded packet data.
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from backend.models.session import (
     ForwardSecrecyStatus,
@@ -99,8 +100,6 @@ WEAK_CIPHERS = {
     "TLS_DH_anon_WITH_RC4_128_MD5",
     "TLS_DH_anon_WITH_3DES_EDE_CBC_SHA",
     "TLS_DH_anon_WITH_AES_128_CBC_SHA",
-    # MD5 MACs
-    "TLS_RSA_WITH_RC4_128_MD5",
     # Weak RSA key exchange (no FS)
     "TLS_RSA_WITH_AES_128_CBC_SHA",
     "TLS_RSA_WITH_AES_256_CBC_SHA",
@@ -135,13 +134,13 @@ CIPHER_HEX_NAMES: dict[str, str] = {
 }
 
 
-def resolve_cipher_name(raw: Any) -> Optional[str]:
+def resolve_cipher_name(raw: Any) -> str | None:
     """Resolve a cipher suite value to its IANA name."""
     if raw is None:
         return None
     s = str(raw).strip()
     # Already a name
-    if s.startswith("TLS_") or s.startswith("SSL_"):
+    if s.startswith(("TLS_", "SSL_")):
         return s
     # Try hex lookup
     hex_s = s.lower()
@@ -153,14 +152,14 @@ def resolve_cipher_name(raw: Any) -> Optional[str]:
     return f"UNKNOWN({s})"
 
 
-def is_weak_cipher(cipher_name: Optional[str]) -> bool:
+def is_weak_cipher(cipher_name: str | None) -> bool:
     """Return True if the cipher is known to be weak/deprecated."""
     if not cipher_name:
         return False
     return cipher_name in WEAK_CIPHERS or cipher_name.startswith("UNKNOWN")
 
 
-def get_key_exchange(cipher_name: Optional[str], tls_version: TLSVersion) -> Optional[str]:
+def get_key_exchange(cipher_name: str | None, tls_version: TLSVersion) -> str | None:
     """Extract key exchange from cipher name."""
     if not cipher_name:
         return None
@@ -180,7 +179,9 @@ def get_key_exchange(cipher_name: Optional[str], tls_version: TLSVersion) -> Opt
     return None
 
 
-def assess_forward_secrecy(cipher_name: Optional[str], tls_version: TLSVersion) -> ForwardSecrecyStatus:
+def assess_forward_secrecy(
+    cipher_name: str | None, tls_version: TLSVersion
+) -> ForwardSecrecyStatus:
     """Determine forward secrecy status from cipher/TLS version."""
     if tls_version == TLSVersion.TLS_1_3:
         # TLS 1.3 mandates ephemeral key exchange → always FS
@@ -198,6 +199,7 @@ def assess_forward_secrecy(cipher_name: Optional[str], tls_version: TLSVersion) 
 # JA3 Fingerprinting
 # ---------------------------------------------------------------------------
 
+
 def compute_ja3(
     tls_version: int,
     cipher_suites: list[int],
@@ -213,7 +215,7 @@ def compute_ja3(
 
     # Filter GREASE values (0xXAXA pattern)
     def no_grease(lst: list[int]) -> list[int]:
-        return [x for x in lst if not (x & 0x0f == 0x0a and (x >> 8) & 0x0f == 0x0a)]
+        return [x for x in lst if not (x & 0x0F == 0x0A and (x >> 8) & 0x0F == 0x0A)]
 
     ciphers_str = "-".join(str(c) for c in no_grease(cipher_suites))
     exts_str = "-".join(str(e) for e in no_grease(extensions))
@@ -221,7 +223,7 @@ def compute_ja3(
     formats_str = "-".join(str(f) for f in ec_point_formats)
 
     ja3_str = f"{tls_version},{ciphers_str},{exts_str},{curves_str},{formats_str}"
-    ja3_hash = hashlib.md5(ja3_str.encode()).hexdigest()  # noqa: S324
+    ja3_hash = hashlib.md5(ja3_str.encode()).hexdigest()
     return ja3_str, ja3_hash
 
 
@@ -229,20 +231,18 @@ def compute_ja3(
 # Handshake Extractor
 # ---------------------------------------------------------------------------
 
-def extract_tls_handshake(stream_packets: list[dict[str, Any]]) -> Optional[TLSHandshake]:
+
+def extract_tls_handshake(stream_packets: list[dict[str, Any]]) -> TLSHandshake | None:
     """
     Extract a TLSHandshake object from a stream's packet list.
     Handles TLS 1.3 certificate observability limitation correctly.
     """
     handshake = TLSHandshake()
     has_tls = False
-    client_hello_seen = False
-    server_hello_seen = False
 
     offered_ciphers_raw: list[str] = []
     client_extensions_raw: list[str] = []
     server_extensions_raw: list[str] = []
-    supported_versions: list[str] = []
 
     for pkt in stream_packets:
         layers = pkt.get("_source", {}).get("layers", {})
@@ -262,7 +262,6 @@ def extract_tls_handshake(stream_packets: list[dict[str, Any]]) -> Optional[TLSH
             hs_types = []
 
         if "1" in hs_types:  # ClientHello
-            client_hello_seen = True
             handshake.client_hello_pkt = pkt_num
 
             # Version from ClientHello legacy_version (may be 0x0303 for TLS 1.3)
@@ -285,16 +284,7 @@ def extract_tls_handshake(stream_packets: list[dict[str, Any]]) -> Optional[TLSH
                 else:
                     client_extensions_raw = [str(raw_exts)]
 
-            # Supported versions extension (indicates TLS 1.3 support)
-            sv = layers.get("tls.handshake.extensions.supported_version")
-            if sv:
-                if isinstance(sv, list):
-                    supported_versions = [str(v) for v in sv]
-                else:
-                    supported_versions = [str(sv)]
-
         if "2" in hs_types:  # ServerHello
-            server_hello_seen = True
             handshake.server_hello_pkt = pkt_num
 
             raw_ver = layers.get("tls.handshake.version")
@@ -339,15 +329,15 @@ def extract_tls_handshake(stream_packets: list[dict[str, Any]]) -> Optional[TLSH
         return None
 
     # Resolve offered ciphers to names
-    handshake.client_offered_ciphers = [
-        resolve_cipher_name(c) or c for c in offered_ciphers_raw
-    ]
+    handshake.client_offered_ciphers = [resolve_cipher_name(c) or c for c in offered_ciphers_raw]
     handshake.client_tls_extensions = client_extensions_raw
     handshake.server_tls_extensions = server_extensions_raw
 
     # Key exchange and forward secrecy
     handshake.key_exchange = get_key_exchange(handshake.cipher_suite, handshake.tls_version)
-    handshake.forward_secrecy = assess_forward_secrecy(handshake.cipher_suite, handshake.tls_version)
+    handshake.forward_secrecy = assess_forward_secrecy(
+        handshake.cipher_suite, handshake.tls_version
+    )
 
     # TLS 1.3 certificate observability note
     if handshake.tls_version == TLSVersion.TLS_1_3:

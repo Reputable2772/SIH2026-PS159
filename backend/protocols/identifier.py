@@ -2,6 +2,7 @@
 SecureMailScope — Protocol Identification
 Identifies SMTP, IMAP, POP3 from TCP sessions.
 """
+
 from __future__ import annotations
 
 import logging
@@ -17,14 +18,14 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 WELL_KNOWN_PORTS: dict[int, ApplicationProtocol] = {
-    25:   ApplicationProtocol.SMTP,   # SMTP
-    465:  ApplicationProtocol.SMTP,   # SMTPS (implicit TLS)
-    587:  ApplicationProtocol.SMTP,   # SMTP submission
-    2525: ApplicationProtocol.SMTP,   # Alt SMTP
-    143:  ApplicationProtocol.IMAP,   # IMAP
-    993:  ApplicationProtocol.IMAP,   # IMAPS (implicit TLS)
-    110:  ApplicationProtocol.POP3,   # POP3
-    995:  ApplicationProtocol.POP3,   # POP3S (implicit TLS)
+    25: ApplicationProtocol.SMTP,  # SMTP
+    465: ApplicationProtocol.SMTP,  # SMTPS (implicit TLS)
+    587: ApplicationProtocol.SMTP,  # SMTP submission
+    2525: ApplicationProtocol.SMTP,  # Alt SMTP
+    143: ApplicationProtocol.IMAP,  # IMAP
+    993: ApplicationProtocol.IMAP,  # IMAPS (implicit TLS)
+    110: ApplicationProtocol.POP3,  # POP3
+    995: ApplicationProtocol.POP3,  # POP3S (implicit TLS)
 }
 
 # Ports where TLS is implicit (no STARTTLS needed)
@@ -112,7 +113,12 @@ def identify_from_tshark_packets(packets: list[dict[str, Any]]) -> ApplicationPr
         layers = pkt.get("_source", {}).get("layers", {})
 
         # tshark protocol detection via dissector layers
-        if "smtp" in layers or layers.get("smtp.req.command") or layers.get("smtp.rsp.code") or layers.get("smtp.response.code"):
+        if (
+            "smtp" in layers
+            or layers.get("smtp.req.command")
+            or layers.get("smtp.rsp.code")
+            or layers.get("smtp.response.code")
+        ):
             return ApplicationProtocol.SMTP
         if "imap" in layers or layers.get("imap.request") or layers.get("imap.response"):
             return ApplicationProtocol.IMAP
@@ -124,9 +130,7 @@ def identify_from_tshark_packets(packets: list[dict[str, Any]]) -> ApplicationPr
         dst_port = layers.get("tcp.dstport")
         if src_port or dst_port:
             try:
-                proto = identify_protocol_by_port(
-                    int(src_port or 0), int(dst_port or 0)
-                )
+                proto = identify_protocol_by_port(int(src_port or 0), int(dst_port or 0))
                 if proto != ApplicationProtocol.UNKNOWN:
                     return proto
             except (ValueError, TypeError):

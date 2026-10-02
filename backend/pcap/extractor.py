@@ -2,21 +2,24 @@
 SecureMailScope — PCAP Ingestion Layer
 Wraps tshark for reliable protocol/TLS dissection, with dpkt fallback.
 """
+
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import logging
 import os
 import subprocess
 import tempfile
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # PCAP File Utilities
 # ---------------------------------------------------------------------------
+
 
 def compute_sha256(path: str) -> str:
     """Compute SHA-256 of a file in a streaming fashion."""
@@ -27,12 +30,10 @@ def compute_sha256(path: str) -> str:
     return h.hexdigest()
 
 
-def find_tshark() -> Optional[str]:
+def find_tshark() -> str | None:
     """Locate tshark binary."""
     for candidate in ["tshark", "/run/current-system/sw/bin/tshark"]:
-        result = subprocess.run(
-            ["which", candidate], capture_output=True, text=True
-        )
+        result = subprocess.run(["which", candidate], capture_output=True, text=True)
         if result.returncode == 0:
             return result.stdout.strip()
     # Try absolute common NixOS locations
@@ -95,7 +96,7 @@ TSHARK_FIELDS = [
 def run_tshark(
     pcap_path: str,
     extra_filters: str = "",
-    fields: Optional[list[str]] = None,
+    fields: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Run tshark on a PCAP, returning a list of packet records as dicts.
@@ -111,8 +112,10 @@ def run_tshark(
 
     cmd = [
         TSHARK_BIN,
-        "-r", pcap_path,
-        "-T", "json",
+        "-r",
+        pcap_path,
+        "-T",
+        "json",
         "--no-duplicate-keys",
     ]
     for f in fields:
@@ -192,6 +195,7 @@ def extract_field_list(pkt: dict, key: str) -> list[str]:
 # Stream-Level PCAP Grouping (via tshark tcp.stream)
 # ---------------------------------------------------------------------------
 
+
 def get_tcp_streams(pcap_path: str) -> dict[str, list[dict]]:
     """
     Extract all packets grouped by TCP stream index.
@@ -217,6 +221,7 @@ def get_tcp_streams(pcap_path: str) -> dict[str, list[dict]]:
 # Certificate DER extraction
 # ---------------------------------------------------------------------------
 
+
 def extract_certificates_from_pcap(pcap_path: str) -> dict[str, bytes]:
     """
     Use tshark to extract raw certificate DER bytes from the PCAP.
@@ -232,8 +237,10 @@ def extract_certificates_from_pcap(pcap_path: str) -> dict[str, bytes]:
     with tempfile.TemporaryDirectory() as tmpdir:
         cmd = [
             TSHARK_BIN,
-            "-r", pcap_path,
-            "--export-objects", f"x509af,{tmpdir}",
+            "-r",
+            pcap_path,
+            "--export-objects",
+            f"x509af,{tmpdir}",
             "-q",
         ]
         try:
@@ -253,6 +260,7 @@ def extract_certificates_from_pcap(pcap_path: str) -> dict[str, bytes]:
 # PCAP metadata
 # ---------------------------------------------------------------------------
 
+
 def get_pcap_metadata(pcap_path: str) -> dict[str, Any]:
     """Extract high-level capture metadata using tshark capinfos."""
     capinfos_bin = TSHARK_BIN.replace("tshark", "capinfos") if TSHARK_BIN else None
@@ -266,8 +274,7 @@ def get_pcap_metadata(pcap_path: str) -> dict[str, Any]:
 
     if capinfos_bin and os.path.exists(capinfos_bin):
         result = subprocess.run(
-            [capinfos_bin, "-M", pcap_path],
-            capture_output=True, text=True, timeout=30
+            [capinfos_bin, "-M", pcap_path], capture_output=True, text=True, timeout=30
         )
         for line in result.stdout.splitlines():
             if ":" in line:
@@ -283,10 +290,8 @@ def get_pcap_metadata(pcap_path: str) -> dict[str, Any]:
         for pkt in packets:
             t = extract_field(pkt, "frame.time_epoch")
             if t:
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     times.append(float(t))
-                except (ValueError, TypeError):
-                    pass
         if times:
             meta["first_packet_time"] = min(times)
             meta["last_packet_time"] = max(times)
