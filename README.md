@@ -115,6 +115,16 @@ just frontend
 # Dashboard at http://localhost:5173
 ```
 
+### Containerized Stack (Podman / Compose)
+
+```bash
+# Build and start backend + frontend (with Caddy reverse proxy)
+just compose-up
+
+# Stop services
+just compose-down
+```
+
 ---
 
 ## Generating Test PCAPs
@@ -133,7 +143,7 @@ This creates synthetic PCAPs in `demo_pcaps/`:
 | `04_expired_cert.pcap` | Expired certificate | expired_certificate |
 | `05_starttls_fallback.pcap` | STARTTLS rejected → cleartext | starttls_anomaly |
 | `06_anomalous_handshake.pcap` | Weak 1024-bit key | weak_key |
-| `07_plaintext_smtp.pcap` | No TLS at all | configuration (no_tls) |
+| `07_plaintext_smtp.pcap` | No TLS at all | starttls_anomaly |
 
 ---
 
@@ -232,6 +242,8 @@ Do not use for compliance or regulatory purposes.
 ├── flake.nix              — Nix development environment
 ├── pyproject.toml         — Python project config
 ├── justfile               — Task runner
+├── compose.yaml           — Podman/Docker Compose configuration
+├── podman-compose.yml     — Compose specification
 ├── backend/
 │   ├── api/main.py        — FastAPI backend
 │   ├── pcap/              — PCAP ingestion + pipeline
