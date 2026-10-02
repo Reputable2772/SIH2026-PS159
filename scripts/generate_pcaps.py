@@ -1,500 +1,273 @@
 #!/usr/bin/env python3
 """
 SecureMailScope — Synthetic PCAP Generator
-Generates reproducible test PCAPs using Python's socket/ssl libraries.
-Does NOT require an external mail server.
+Generates reproducible test PCAPs using Scapy and cryptography.
+Runs entirely in user space without requiring root or network interfaces.
 
 Scenarios:
   01_secure_tls12.pcap       – SMTP with TLS 1.2 + ECDHE + valid cert
   02_legacy_tls10.pcap       – SMTP with TLS 1.0 (deprecated)
-  03_weak_cipher.pcap        – SMTP TLS 1.2 with RC4/3DES (weak cipher)
-  04_expired_cert.pcap       – IMAP with an expired self-signed certificate
-  05_starttls_fallback.pcap  – SMTP STARTTLS advertised but not used
-  06_anomalous_handshake.pcap – Anomalous TLS configuration
+  03_weak_cipher.pcap        – SMTP TLS 1.2 with 3DES (weak cipher, no FS)
+  04_expired_cert.pcap       – IMAP with an expired certificate
+  05_starttls_fallback.pcap  – SMTP STARTTLS rejected + cleartext auth
+  06_anomalous_handshake.pcap – Anomalous TLS configuration (weak 1024-bit RSA)
   07_plaintext_smtp.pcap     – SMTP with no TLS (plaintext)
-
-Uses:
-  - Python ssl + socket for TLS sessions
-  - OpenSSL for cert generation
-  - tcpdump/tshark for capture
 """
 from __future__ import annotations
 
-import os
-import shutil
-import socket
-import ssl
-import subprocess
-import sys
-import tempfile
-import threading
-import time
+import datetime
 from pathlib import Path
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+
+from scapy.all import Ether, IP, TCP, wrpcap
+from scapy.layers.tls.all import (
+    TLS, TLSClientHello, TLSServerHello, TLSCertificate,
+    TLSServerHelloDone, TLS_Ext_ServerName, ServerName
+)
 
 DEMO_DIR = Path(__file__).parent.parent / "demo_pcaps"
 CERTS_DIR = DEMO_DIR / "_certs"
 
 
 # ---------------------------------------------------------------------------
-# Utilities
-# ---------------------------------------------------------------------------
-
-def run(cmd: list[str], check: bool = True, **kwargs) -> subprocess.CompletedProcess:
-    print(f"  $ {' '.join(cmd)}")
-    return subprocess.run(cmd, check=check, capture_output=True, text=True, **kwargs)
-
-
-def require_tool(name: str) -> str:
-    path = shutil.which(name)
-    if not path:
-        print(f"[ERROR] Required tool not found: {name}")
-        print(f"        Ensure you are inside the Nix devshell: nix develop")
-        sys.exit(1)
-    return path
-
-
-TSHARK = require_tool("tshark")
-OPENSSL = require_tool("openssl")
-TCPDUMP = require_tool("tcpdump") if shutil.which("tcpdump") else None
-
-
-# ---------------------------------------------------------------------------
 # Certificate Generation
 # ---------------------------------------------------------------------------
 
-def generate_cert(name: str, days: int = 365, key_size: int = 2048,
-                  expired: bool = False) -> tuple[Path, Path]:
-    """Generate a self-signed certificate. Returns (cert_path, key_path)."""
+def setup_ca() -> tuple[rsa.RSAPrivateKey, x509.Certificate]:
     CERTS_DIR.mkdir(parents=True, exist_ok=True)
-    cert_path = CERTS_DIR / f"{name}.crt"
-    key_path = CERTS_DIR / f"{name}.key"
+    ca_key_path = CERTS_DIR / "ca.key"
+    ca_crt_path = CERTS_DIR / "ca.crt"
 
-    if cert_path.exists() and key_path.exists():
-        return cert_path, key_path
+    if ca_key_path.exists() and ca_crt_path.exists():
+        ca_key = serialization.load_pem_private_key(ca_key_path.read_bytes(), password=None)
+        ca_cert = x509.load_pem_x509_certificate(ca_crt_path.read_bytes())
+        return ca_key, ca_cert
+
+    ca_key = rsa.generate_private_key(65537, 2048)
+    ca_subject = x509.Name([x509.NameAttribute(x509.oid.NameOID.COMMON_NAME, "SecureMailScope Root CA")])
+    ca_cert = (
+        x509.CertificateBuilder()
+        .subject_name(ca_subject)
+        .issuer_name(ca_subject)
+        .public_key(ca_key.public_key())
+        .serial_number(1)
+        .not_valid_before(datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc))
+        .not_valid_after(datetime.datetime(2035, 1, 1, tzinfo=datetime.timezone.utc))
+        .sign(ca_key, hashes.SHA256())
+    )
+
+    ca_key_path.write_bytes(ca_key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.TraditionalOpenSSL,
+        serialization.NoEncryption()
+    ))
+    ca_crt_path.write_bytes(ca_cert.public_bytes(serialization.Encoding.PEM))
+    return ca_key, ca_cert
+
+
+def generate_cert(
+    name: str,
+    cn: str,
+    ca_key: rsa.RSAPrivateKey,
+    ca_cert: x509.Certificate,
+    key_size: int = 2048,
+    expired: bool = False
+) -> bytes:
+    key_path = CERTS_DIR / f"{name}.key"
+    crt_path = CERTS_DIR / f"{name}.crt"
+
+    key = rsa.generate_private_key(65537, key_size)
+    subj = x509.Name([x509.NameAttribute(x509.oid.NameOID.COMMON_NAME, cn)])
 
     if expired:
-        # Create cert that expired yesterday
-        run([
-            OPENSSL, "req", "-x509", "-newkey", f"rsa:{key_size}",
-            "-keyout", str(key_path), "-out", str(cert_path),
-            "-days", "1", "-nodes",
-            "-subj", f"/CN=expired.{name}.local/O=SecureMailScope Test",
-            "-set_serial", "1",
-        ])
-        # Backdate: use a config to set validity in the past
-        # Simplification: use -days 1 and accept it expires tomorrow.
-        # For a truly expired cert, we generate it then wait — not practical.
-        # Instead: use openssl to create a cert with past validity.
-        run([
-            OPENSSL, "req", "-x509", "-newkey", f"rsa:{key_size}",
-            "-keyout", str(key_path), "-out", str(cert_path),
-            "-days", "1", "-nodes",
-            "-subj", f"/CN=expired.{name}.local/O=SecureMailScope Test",
-            "-not_before", "20200101000000Z",
-            "-not_after", "20201231000000Z",
-        ], check=False)
-        # Fallback: just use short-lived cert
-        if not cert_path.exists():
-            run([
-                OPENSSL, "req", "-x509", "-newkey", f"rsa:{key_size}",
-                "-keyout", str(key_path), "-out", str(cert_path),
-                "-days", "1", "-nodes",
-                "-subj", f"/CN=expired.{name}.local/O=SecureMailScope Test",
-            ])
+        nb = datetime.datetime(2019, 1, 1, tzinfo=datetime.timezone.utc)
+        na = datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc)
     else:
-        run([
-            OPENSSL, "req", "-x509", "-newkey", f"rsa:{key_size}",
-            "-keyout", str(key_path), "-out", str(cert_path),
-            "-days", str(days), "-nodes",
-            "-subj", f"/CN={name}.local/O=SecureMailScope Test/C=IN",
-        ])
+        nb = datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc)
+        na = datetime.datetime(2028, 1, 1, tzinfo=datetime.timezone.utc)
 
-    return cert_path, key_path
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(subj)
+        .issuer_name(ca_cert.subject)
+        .public_key(key.public_key())
+        .serial_number(100 + len(name))
+        .not_valid_before(nb)
+        .not_valid_after(na)
+        .sign(ca_key, hashes.SHA256())
+    )
 
-
-# ---------------------------------------------------------------------------
-# PCAP Capture Wrapper
-# ---------------------------------------------------------------------------
-
-class PCAPCapture:
-    """Captures traffic on loopback during a context block."""
-
-    def __init__(self, output_path: Path, port: int):
-        self.output_path = output_path
-        self.port = port
-        self._proc: subprocess.Popen | None = None
-
-    def __enter__(self):
-        output_path = str(self.output_path)
-        # Use tshark if available, else tcpdump
-        cmd = [
-            TSHARK, "-i", "lo", "-w", output_path,
-            "-f", f"tcp port {self.port}",
-            "-a", "duration:15",
-        ]
-        self._proc = subprocess.Popen(
-            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
-        time.sleep(0.8)  # Let tshark start
-        return self
-
-    def __exit__(self, *_):
-        if self._proc:
-            time.sleep(1.0)  # Capture trailing packets
-            self._proc.terminate()
-            try:
-                self._proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self._proc.kill()
-        print(f"  Saved: {self.output_path}")
+    key_path.write_bytes(key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.TraditionalOpenSSL,
+        serialization.NoEncryption()
+    ))
+    crt_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    return cert.public_bytes(serialization.Encoding.DER)
 
 
 # ---------------------------------------------------------------------------
-# Mini TLS Server / Client
+# Packet Crafting Helpers
 # ---------------------------------------------------------------------------
 
-class TLSServer(threading.Thread):
-    """Minimal TLS server for test traffic generation."""
-
-    def __init__(self, port: int, cert: Path, key: Path,
-                 tls_version=None, ciphers: str | None = None,
-                 smtp_mode: bool = True):
-        super().__init__(daemon=True)
-        self.port = port
-        self.cert = cert
-        self.key = key
-        self.tls_version = tls_version
-        self.ciphers = ciphers
-        self.smtp_mode = smtp_mode
-        self.ready = threading.Event()
-        self.error: Exception | None = None
-
-    def run(self):
-        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ctx.load_cert_chain(str(self.cert), str(self.key))
-        if self.tls_version:
-            ctx.minimum_version = self.tls_version
-            ctx.maximum_version = self.tls_version
-        if self.ciphers:
-            try:
-                ctx.set_ciphers(self.ciphers)
-            except ssl.SSLError:
-                pass
-
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.settimeout(10)
-            try:
-                sock.bind(("127.0.0.1", self.port))
-                sock.listen(1)
-                self.ready.set()
-                conn, _ = sock.accept()
-                with ctx.wrap_socket(conn, server_side=True) as tls_conn:
-                    if self.smtp_mode:
-                        tls_conn.send(b"220 test.local ESMTP SecureMailScope-Test\r\n")
-                        data = tls_conn.recv(1024)
-                        tls_conn.send(b"250-test.local\r\n250 OK\r\n")
-                        time.sleep(0.5)
-                    else:
-                        tls_conn.send(b"* OK [CAPABILITY IMAP4rev1 STARTTLS AUTH=PLAIN] SecureMailScope IMAP\r\n")
-                        data = tls_conn.recv(1024)
-                        tls_conn.send(b"* BYE Closing\r\n")
-            except Exception as exc:
-                self.error = exc
-
-
-class STARTTLSServer(threading.Thread):
-    """SMTP server that advertises STARTTLS but doesn't enforce it."""
-
-    def __init__(self, port: int, offer_starttls: bool = True,
-                 accept_starttls: bool = False):
-        super().__init__(daemon=True)
-        self.port = port
-        self.offer_starttls = offer_starttls
-        self.accept_starttls = accept_starttls
-        self.ready = threading.Event()
-
-    def run(self):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.settimeout(10)
-            sock.bind(("127.0.0.1", self.port))
-            sock.listen(1)
-            self.ready.set()
-            try:
-                conn, _ = sock.accept()
-                conn.send(b"220 fallback.local ESMTP\r\n")
-                data = conn.recv(1024)
-                if self.offer_starttls:
-                    conn.send(b"250-fallback.local\r\n250-STARTTLS\r\n250 OK\r\n")
-                else:
-                    conn.send(b"250-fallback.local\r\n250 OK\r\n")
-                # Wait for client — if STARTTLS is offered, client might send STARTTLS
-                # but server rejects it, forcing fallback
-                data = conn.recv(1024)
-                if b"STARTTLS" in data and not self.accept_starttls:
-                    conn.send(b"454 TLS not available\r\n")
-                    # Client continues in plaintext
-                    data = conn.recv(1024)
-                conn.send(b"250 OK\r\n")
-                time.sleep(0.5)
-                conn.close()
-            except Exception:
-                pass
-
-
-class PlaintextSMTPServer(threading.Thread):
-    """Plaintext SMTP server — no TLS at all."""
-
-    def __init__(self, port: int):
-        super().__init__(daemon=True)
-        self.port = port
-        self.ready = threading.Event()
-
-    def run(self):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.settimeout(10)
-            sock.bind(("127.0.0.1", self.port))
-            sock.listen(1)
-            self.ready.set()
-            try:
-                conn, _ = sock.accept()
-                conn.send(b"220 plain.local ESMTP\r\n")
-                conn.recv(1024)
-                conn.send(b"250-plain.local\r\n250 OK\r\n")
-                conn.recv(1024)
-                conn.send(b"250 OK\r\n")
-                conn.recv(1024)
-                conn.send(b"250 OK\r\n")
-                time.sleep(0.3)
-                conn.close()
-            except Exception:
-                pass
-
-
-def smtp_client_tls(port: int, use_starttls: bool = False,
-                    start_cmd: bool = True):
-    """Minimal SMTP client that connects with TLS."""
-    if use_starttls:
-        # Connect plain, send EHLO, then STARTTLS
-        try:
-            with socket.create_connection(("127.0.0.1", port), timeout=8) as sock:
-                sock.recv(1024)  # banner
-                sock.send(b"EHLO client.test\r\n")
-                sock.recv(1024)  # 250 response
-                sock.send(b"STARTTLS\r\n")
-                resp = sock.recv(1024)
-                if b"220" in resp:
-                    ctx = ssl.create_default_context()
-                    ctx.check_hostname = False
-                    ctx.verify_mode = ssl.CERT_NONE
-                    with ctx.wrap_socket(sock, server_hostname="test.local") as tls:
-                        tls.send(b"EHLO client.test\r\n")
-                        tls.recv(1024)
-                        tls.send(b"QUIT\r\n")
-        except Exception as exc:
-            print(f"  [client warn] {exc}")
-    else:
-        # Direct TLS
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        try:
-            with socket.create_connection(("127.0.0.1", port), timeout=8) as sock:
-                with ctx.wrap_socket(sock, server_hostname="test.local") as tls:
-                    tls.recv(1024)
-                    tls.send(b"EHLO client.test\r\n")
-                    tls.recv(1024)
-                    tls.send(b"QUIT\r\n")
-        except Exception as exc:
-            print(f"  [client warn] {exc}")
-
-
-def smtp_client_plain(port: int):
-    """Plaintext SMTP client."""
-    try:
-        with socket.create_connection(("127.0.0.1", port), timeout=8) as sock:
-            sock.recv(1024)
-            sock.send(b"EHLO client.test\r\n")
-            sock.recv(1024)
-            sock.send(b"MAIL FROM:<user@test.local>\r\n")
-            sock.recv(1024)
-            sock.send(b"QUIT\r\n")
-    except Exception as exc:
-        print(f"  [client warn] {exc}")
-
-
-def starttls_fallback_client(port: int):
-    """Client that gets STARTTLS rejected and continues in plaintext."""
-    try:
-        with socket.create_connection(("127.0.0.1", port), timeout=8) as sock:
-            sock.recv(1024)
-            sock.send(b"EHLO attacker.local\r\n")
-            sock.recv(1024)  # should contain STARTTLS offer
-            sock.send(b"STARTTLS\r\n")
-            resp = sock.recv(1024)
-            # Server rejected — continue in cleartext (suspicious)
-            sock.send(b"MAIL FROM:<user@test.local>\r\n")
-            sock.recv(1024)
-            sock.send(b"QUIT\r\n")
-    except Exception as exc:
-        print(f"  [client warn] {exc}")
+def tcp_con(sport: int, dport: int, cli_ip: str = "192.168.1.100", srv_ip: str = "192.168.1.10"):
+    eth_c2s = Ether(src="02:00:00:00:00:01", dst="02:00:00:00:00:02")
+    eth_s2c = Ether(src="02:00:00:00:00:02", dst="02:00:00:00:00:01")
+    ip_c2s = IP(src=cli_ip, dst=srv_ip)
+    ip_s2c = IP(src=srv_ip, dst=cli_ip)
+    pkts = [
+        eth_c2s / ip_c2s / TCP(sport=sport, dport=dport, flags="S", seq=1000),
+        eth_s2c / ip_s2c / TCP(sport=dport, dport=sport, flags="SA", seq=2000, ack=1001),
+        eth_c2s / ip_c2s / TCP(sport=sport, dport=dport, flags="A", seq=1001, ack=2001)
+    ]
+    return pkts, eth_c2s / ip_c2s, eth_s2c / ip_s2c
 
 
 # ---------------------------------------------------------------------------
-# Scenario Generators
+# Scenarios
 # ---------------------------------------------------------------------------
 
-def scenario_01_secure_tls12(base_port: int = 10025):
-    """Secure SMTP session: TLS 1.2, ECDHE, valid cert."""
-    print("\n[01] Generating secure_tls12.pcap ...")
-    cert, key = generate_cert("secure")
-    out = DEMO_DIR / "01_secure_tls12.pcap"
-
-    srv = TLSServer(base_port, cert, key,
-                    tls_version=ssl.TLSVersion.TLSv1_2, smtp_mode=True)
-    srv.start()
-    srv.ready.wait(timeout=5)
-
-    with PCAPCapture(out, base_port):
-        smtp_client_tls(base_port, use_starttls=False)
-
-    time.sleep(0.5)
-
-
-def scenario_02_legacy_tls10(base_port: int = 10026):
-    """Legacy TLS 1.0 — should trigger deprecated_tls finding."""
-    print("\n[02] Generating legacy_tls10.pcap ...")
-    cert, key = generate_cert("legacy")
-    out = DEMO_DIR / "02_legacy_tls10.pcap"
-
-    try:
-        srv = TLSServer(base_port, cert, key,
-                        tls_version=ssl.TLSVersion.TLSv1, smtp_mode=True)
-        srv.start()
-        srv.ready.wait(timeout=5)
-        with PCAPCapture(out, base_port):
-            smtp_client_tls(base_port, use_starttls=False)
-    except AttributeError:
-        # TLSv1 not available on this Python build — use minimum_version workaround
-        print("  [warn] TLSv1 not directly available; generating approximate TLS 1.0 scenario")
-        srv = TLSServer(base_port, cert, key, smtp_mode=True)
-        srv.start()
-        srv.ready.wait(timeout=5)
-        with PCAPCapture(out, base_port):
-            smtp_client_tls(base_port, use_starttls=False)
-    time.sleep(0.5)
+def scenario_01_secure_tls12(ca_key, ca_cert):
+    """01: Secure SMTP session with TLS 1.2, ECDHE, valid certificate."""
+    print("  [01] Generating 01_secure_tls12.pcap ...")
+    cert = generate_cert("secure", "mail.secure.local", ca_key, ca_cert, 2048)
+    p, c2s, s2c = tcp_con(51001, 587)
+    p.append(s2c / TCP(sport=587, dport=51001, flags="PA", seq=2001, ack=1001) / b"220 mail.secure.local ESMTP\r\n")
+    p.append(c2s / TCP(sport=51001, dport=587, flags="PA", seq=1001, ack=2028) / b"EHLO client.test\r\n")
+    p.append(s2c / TCP(sport=587, dport=51001, flags="PA", seq=2028, ack=1019) / b"250-mail.secure.local\r\n250-STARTTLS\r\n250 OK\r\n")
+    p.append(c2s / TCP(sport=51001, dport=587, flags="PA", seq=1019, ack=2069) / b"STARTTLS\r\n")
+    p.append(s2c / TCP(sport=587, dport=51001, flags="PA", seq=2069, ack=1029) / b"220 2.0.0 Ready to start TLS\r\n")
+    ch = TLS(msg=[TLSClientHello(
+        version=0x0303,
+        ciphers=[0xc02f, 0xc030, 0xcca8, 0xcca9, 0x009c, 0x009d],
+        ext=[TLS_Ext_ServerName(servernames=[ServerName(servername=b"mail.secure.local")])]
+    )])
+    p.append(c2s / TCP(sport=51001, dport=587, flags="PA", seq=1029, ack=2099) / ch)
+    sh = TLS(msg=[
+        TLSServerHello(version=0x0303, cipher=0xc02f),
+        TLSCertificate(certs=[(len(cert), cert)]),
+        TLSServerHelloDone()
+    ])
+    p.append(s2c / TCP(sport=587, dport=51001, flags="PA", seq=2099, ack=1029 + len(bytes(ch))) / sh)
+    wrpcap(str(DEMO_DIR / "01_secure_tls12.pcap"), p)
 
 
-def scenario_03_weak_cipher(base_port: int = 10027):
-    """SMTP with weak cipher (3DES) — should trigger weak_cipher finding."""
-    print("\n[03] Generating weak_cipher.pcap ...")
-    cert, key = generate_cert("weak")
-    out = DEMO_DIR / "03_weak_cipher.pcap"
-
-    # Note: modern OpenSSL disables 3DES by default; we attempt and fall back
-    srv = TLSServer(base_port, cert, key,
-                    tls_version=None,
-                    ciphers="AES128-SHA",  # RSA key exchange, no FS
-                    smtp_mode=True)
-    srv.start()
-    srv.ready.wait(timeout=5)
-    with PCAPCapture(out, base_port):
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        try:
-            ctx.set_ciphers("AES128-SHA")
-        except ssl.SSLError:
-            pass
-        try:
-            with socket.create_connection(("127.0.0.1", base_port), timeout=8) as sock:
-                with ctx.wrap_socket(sock, server_hostname="weak.local") as tls:
-                    tls.recv(1024)
-                    tls.send(b"EHLO test\r\n")
-                    tls.recv(1024)
-        except Exception as exc:
-            print(f"  [warn] {exc}")
-    time.sleep(0.5)
+def scenario_02_legacy_tls10(ca_key, ca_cert):
+    """02: Legacy TLS 1.0 session (deprecated)."""
+    print("  [02] Generating 02_legacy_tls10.pcap ...")
+    cert = generate_cert("legacy", "mail.legacy.local", ca_key, ca_cert, 2048)
+    p, c2s, s2c = tcp_con(51002, 25)
+    p.append(s2c / TCP(sport=25, dport=51002, flags="PA", seq=2001, ack=1001) / b"220 mail.legacy.local ESMTP\r\n")
+    p.append(c2s / TCP(sport=51002, dport=25, flags="PA", seq=1001, ack=2028) / b"EHLO client.test\r\n")
+    p.append(s2c / TCP(sport=25, dport=51002, flags="PA", seq=2028, ack=1019) / b"250-mail.legacy.local\r\n250-STARTTLS\r\n250 OK\r\n")
+    p.append(c2s / TCP(sport=51002, dport=25, flags="PA", seq=1019, ack=2069) / b"STARTTLS\r\n")
+    p.append(s2c / TCP(sport=25, dport=51002, flags="PA", seq=2069, ack=1029) / b"220 2.0.0 Ready to start TLS\r\n")
+    ch = TLS(msg=[TLSClientHello(version=0x0301, ciphers=[0x002f, 0x0035])])
+    p.append(c2s / TCP(sport=51002, dport=25, flags="PA", seq=1029, ack=2099) / ch)
+    sh = TLS(msg=[
+        TLSServerHello(version=0x0301, cipher=0x002f),
+        TLSCertificate(certs=[(len(cert), cert)]),
+        TLSServerHelloDone()
+    ])
+    p.append(s2c / TCP(sport=25, dport=51002, flags="PA", seq=2099, ack=1029 + len(bytes(ch))) / sh)
+    wrpcap(str(DEMO_DIR / "02_legacy_tls10.pcap"), p)
 
 
-def scenario_04_expired_cert(base_port: int = 10028):
-    """IMAP with expired certificate — should trigger expired_certificate finding."""
-    print("\n[04] Generating expired_cert.pcap ...")
-    cert, key = generate_cert("expired", days=1, expired=True)
-    out = DEMO_DIR / "04_expired_cert.pcap"
-
-    srv = TLSServer(base_port, cert, key, smtp_mode=False)
-    srv.start()
-    srv.ready.wait(timeout=5)
-    with PCAPCapture(out, base_port):
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        try:
-            with socket.create_connection(("127.0.0.1", base_port), timeout=8) as sock:
-                with ctx.wrap_socket(sock, server_hostname="expired.local") as tls:
-                    tls.recv(1024)
-                    tls.send(b"A001 CAPABILITY\r\n")
-                    tls.recv(1024)
-        except Exception as exc:
-            print(f"  [warn] {exc}")
-    time.sleep(0.5)
+def scenario_03_weak_cipher(ca_key, ca_cert):
+    """03: Weak cipher (3DES / RSA key exchange, no forward secrecy)."""
+    print("  [03] Generating 03_weak_cipher.pcap ...")
+    cert = generate_cert("weak", "mail.weak.local", ca_key, ca_cert, 2048)
+    p, c2s, s2c = tcp_con(51003, 25)
+    p.append(s2c / TCP(sport=25, dport=51003, flags="PA", seq=2001, ack=1001) / b"220 mail.weak.local ESMTP\r\n")
+    p.append(c2s / TCP(sport=51003, dport=25, flags="PA", seq=1001, ack=2026) / b"EHLO client.test\r\n")
+    p.append(s2c / TCP(sport=25, dport=51003, flags="PA", seq=2026, ack=1019) / b"250-mail.weak.local\r\n250-STARTTLS\r\n250 OK\r\n")
+    p.append(c2s / TCP(sport=51003, dport=25, flags="PA", seq=1019, ack=2067) / b"STARTTLS\r\n")
+    p.append(s2c / TCP(sport=25, dport=51003, flags="PA", seq=2067, ack=1029) / b"220 2.0.0 Ready to start TLS\r\n")
+    ch = TLS(msg=[TLSClientHello(version=0x0303, ciphers=[0x000a, 0x002f])])
+    p.append(c2s / TCP(sport=51003, dport=25, flags="PA", seq=1029, ack=2097) / ch)
+    sh = TLS(msg=[
+        TLSServerHello(version=0x0303, cipher=0x000a),
+        TLSCertificate(certs=[(len(cert), cert)]),
+        TLSServerHelloDone()
+    ])
+    p.append(s2c / TCP(sport=25, dport=51003, flags="PA", seq=2097, ack=1029 + len(bytes(ch))) / sh)
+    wrpcap(str(DEMO_DIR / "03_weak_cipher.pcap"), p)
 
 
-def scenario_05_starttls_fallback(base_port: int = 10029):
-    """SMTP: STARTTLS offered but rejected → client continues in cleartext."""
-    print("\n[05] Generating starttls_fallback.pcap ...")
-    out = DEMO_DIR / "05_starttls_fallback.pcap"
-
-    srv = STARTTLSServer(base_port, offer_starttls=True, accept_starttls=False)
-    srv.start()
-    srv.ready.wait(timeout=5)
-    with PCAPCapture(out, base_port):
-        starttls_fallback_client(base_port)
-    time.sleep(0.5)
-
-
-def scenario_06_anomalous_handshake(base_port: int = 10030):
-    """Anomalous session: RSA key exchange (no FS) + self-signed cert."""
-    print("\n[06] Generating anomalous_handshake.pcap ...")
-    cert, key = generate_cert("anomalous", key_size=1024)  # weak key
-    out = DEMO_DIR / "06_anomalous_handshake.pcap"
-
-    srv = TLSServer(base_port, cert, key, ciphers="AES256-SHA", smtp_mode=True)
-    srv.start()
-    srv.ready.wait(timeout=5)
-    with PCAPCapture(out, base_port):
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        try:
-            ctx.set_ciphers("AES256-SHA")
-        except ssl.SSLError:
-            pass
-        try:
-            with socket.create_connection(("127.0.0.1", base_port), timeout=8) as sock:
-                with ctx.wrap_socket(sock, server_hostname="anomalous.local") as tls:
-                    tls.recv(1024)
-                    tls.send(b"EHLO test\r\n")
-                    tls.recv(1024)
-        except Exception as exc:
-            print(f"  [warn] {exc}")
-    time.sleep(0.5)
+def scenario_04_expired_cert(ca_key, ca_cert):
+    """04: IMAP session with expired certificate."""
+    print("  [04] Generating 04_expired_cert.pcap ...")
+    cert = generate_cert("expired", "mail.expired.local", ca_key, ca_cert, 2048, expired=True)
+    p, c2s, s2c = tcp_con(51004, 993)
+    ch = TLS(msg=[TLSClientHello(version=0x0303, ciphers=[0xc02f, 0xc030])])
+    p.append(c2s / TCP(sport=51004, dport=993, flags="PA", seq=1001, ack=2001) / ch)
+    sh = TLS(msg=[
+        TLSServerHello(version=0x0303, cipher=0xc02f),
+        TLSCertificate(certs=[(len(cert), cert)]),
+        TLSServerHelloDone()
+    ])
+    p.append(s2c / TCP(sport=993, dport=51004, flags="PA", seq=2001, ack=1001 + len(bytes(ch))) / sh)
+    p.append(s2c / TCP(sport=993, dport=51004, flags="PA", seq=2001 + len(bytes(sh)), ack=1001 + len(bytes(ch))) / b"* OK IMAP4rev1 Server Ready\r\n")
+    wrpcap(str(DEMO_DIR / "04_expired_cert.pcap"), p)
 
 
-def scenario_07_plaintext_smtp(base_port: int = 10031):
-    """Plaintext SMTP — no TLS at all."""
-    print("\n[07] Generating plaintext_smtp.pcap ...")
-    out = DEMO_DIR / "07_plaintext_smtp.pcap"
+def scenario_05_starttls_fallback():
+    """05: STARTTLS rejected by server; client sends plaintext credentials."""
+    print("  [05] Generating 05_starttls_fallback.pcap ...")
+    p, c2s, s2c = tcp_con(51005, 25)
+    p.append(s2c / TCP(sport=25, dport=51005, flags="PA", seq=2001, ack=1001) / b"220 fallback.local ESMTP\r\n")
+    p.append(c2s / TCP(sport=51005, dport=25, flags="PA", seq=1001, ack=2026) / b"EHLO client.test\r\n")
+    p.append(s2c / TCP(sport=25, dport=51005, flags="PA", seq=2026, ack=1019) / b"250-fallback.local\r\n250-STARTTLS\r\n250 OK\r\n")
+    p.append(c2s / TCP(sport=51005, dport=25, flags="PA", seq=1019, ack=2067) / b"STARTTLS\r\n")
+    p.append(s2c / TCP(sport=25, dport=51005, flags="PA", seq=2067, ack=1029) / b"454 TLS not available\r\n")
+    p.append(c2s / TCP(sport=51005, dport=25, flags="PA", seq=1029, ack=2091) / b"AUTH PLAIN dGVzdAB0ZXN0ADEyMzQ=\r\n")
+    p.append(s2c / TCP(sport=25, dport=51005, flags="PA", seq=2091, ack=1063) / b"535 Authentication credentials invalid\r\n")
+    p.append(c2s / TCP(sport=51005, dport=25, flags="PA", seq=1063, ack=2131) / b"QUIT\r\n")
+    p.append(s2c / TCP(sport=25, dport=51005, flags="PA", seq=2131, ack=1069) / b"221 2.0.0 Bye\r\n")
+    wrpcap(str(DEMO_DIR / "05_starttls_fallback.pcap"), p)
 
-    srv = PlaintextSMTPServer(base_port)
-    srv.start()
-    srv.ready.wait(timeout=5)
-    with PCAPCapture(out, base_port):
-        smtp_client_plain(base_port)
-    time.sleep(0.5)
+
+def scenario_06_anomalous_handshake(ca_key, ca_cert):
+    """06: Weak 1024-bit RSA key and no forward secrecy."""
+    print("  [06] Generating 06_anomalous_handshake.pcap ...")
+    cert = generate_cert("anomalous", "mail.anomalous.local", ca_key, ca_cert, 1024)
+    p, c2s, s2c = tcp_con(51006, 587)
+    p.append(s2c / TCP(sport=587, dport=51006, flags="PA", seq=2001, ack=1001) / b"220 mail.anomalous.local ESMTP\r\n")
+    p.append(c2s / TCP(sport=51006, dport=587, flags="PA", seq=1001, ack=2031) / b"EHLO client.test\r\n")
+    p.append(s2c / TCP(sport=587, dport=51006, flags="PA", seq=2031, ack=1019) / b"250-mail.anomalous.local\r\n250-STARTTLS\r\n250 OK\r\n")
+    p.append(c2s / TCP(sport=51006, dport=587, flags="PA", seq=1019, ack=2072) / b"STARTTLS\r\n")
+    p.append(s2c / TCP(sport=587, dport=51006, flags="PA", seq=2072, ack=1029) / b"220 2.0.0 Ready to start TLS\r\n")
+    ch = TLS(msg=[TLSClientHello(version=0x0303, ciphers=[0x002f, 0x0035])])
+    p.append(c2s / TCP(sport=51006, dport=587, flags="PA", seq=1029, ack=2102) / ch)
+    sh = TLS(msg=[
+        TLSServerHello(version=0x0303, cipher=0x002f),
+        TLSCertificate(certs=[(len(cert), cert)]),
+        TLSServerHelloDone()
+    ])
+    p.append(s2c / TCP(sport=587, dport=51006, flags="PA", seq=2102, ack=1029 + len(bytes(ch))) / sh)
+    wrpcap(str(DEMO_DIR / "06_anomalous_handshake.pcap"), p)
+
+
+def scenario_07_plaintext_smtp():
+    """07: Pure plaintext SMTP without TLS."""
+    print("  [07] Generating 07_plaintext_smtp.pcap ...")
+    p, c2s, s2c = tcp_con(51007, 25)
+    p.append(s2c / TCP(sport=25, dport=51007, flags="PA", seq=2001, ack=1001) / b"220 plain.local ESMTP Postfix\r\n")
+    p.append(c2s / TCP(sport=51007, dport=25, flags="PA", seq=1001, ack=2031) / b"EHLO client.test\r\n")
+    p.append(s2c / TCP(sport=25, dport=51007, flags="PA", seq=2031, ack=1019) / b"250-plain.local\r\n250 8BITMIME\r\n250 OK\r\n")
+    p.append(c2s / TCP(sport=51007, dport=25, flags="PA", seq=1019, ack=2062) / b"MAIL FROM:<user@plain.local>\r\n")
+    p.append(s2c / TCP(sport=25, dport=51007, flags="PA", seq=2062, ack=1049) / b"250 2.1.0 Ok\r\n")
+    p.append(c2s / TCP(sport=51007, dport=25, flags="PA", seq=1049, ack=2076) / b"RCPT TO:<dest@plain.local>\r\n")
+    p.append(s2c / TCP(sport=25, dport=51007, flags="PA", seq=2076, ack=1076) / b"250 2.1.5 Ok\r\n")
+    p.append(c2s / TCP(sport=51007, dport=25, flags="PA", seq=1076, ack=2090) / b"DATA\r\n")
+    p.append(s2c / TCP(sport=25, dport=51007, flags="PA", seq=2090, ack=1082) / b"354 End data with <CR><LF>.<CR><LF>\r\n")
+    p.append(c2s / TCP(sport=51007, dport=25, flags="PA", seq=1082, ack=2127) / b"Subject: Unencrypted\r\n\r\nHello World\r\n.\r\n")
+    p.append(s2c / TCP(sport=25, dport=51007, flags="PA", seq=2127, ack=1122) / b"250 2.0.0 Ok: queued\r\n")
+    p.append(c2s / TCP(sport=51007, dport=25, flags="PA", seq=1122, ack=2141) / b"QUIT\r\n")
+    p.append(s2c / TCP(sport=25, dport=51007, flags="PA", seq=2141, ack=1128) / b"221 2.0.0 Bye\r\n")
+    wrpcap(str(DEMO_DIR / "07_plaintext_smtp.pcap"), p)
 
 
 # ---------------------------------------------------------------------------
@@ -503,16 +276,20 @@ def scenario_07_plaintext_smtp(base_port: int = 10031):
 
 if __name__ == "__main__":
     DEMO_DIR.mkdir(parents=True, exist_ok=True)
+    CERTS_DIR.mkdir(parents=True, exist_ok=True)
+
     print("=" * 60)
-    print("SecureMailScope — Synthetic PCAP Generator")
+    print("SecureMailScope — Synthetic PCAP Generator (Scapy Engine)")
     print("=" * 60)
 
-    scenario_01_secure_tls12()
-    scenario_02_legacy_tls10()
-    scenario_03_weak_cipher()
-    scenario_04_expired_cert()
+    ca_key, ca_cert = setup_ca()
+
+    scenario_01_secure_tls12(ca_key, ca_cert)
+    scenario_02_legacy_tls10(ca_key, ca_cert)
+    scenario_03_weak_cipher(ca_key, ca_cert)
+    scenario_04_expired_cert(ca_key, ca_cert)
     scenario_05_starttls_fallback()
-    scenario_06_anomalous_handshake()
+    scenario_06_anomalous_handshake(ca_key, ca_cert)
     scenario_07_plaintext_smtp()
 
     print("\n" + "=" * 60)
