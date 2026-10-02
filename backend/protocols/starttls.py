@@ -92,10 +92,31 @@ class SMTPSTARTTLSMachine:
     def process_packet(self, pkt: dict[str, Any], pkt_num: int) -> None:
         layers = pkt.get("_source", {}).get("layers", {})
 
-        smtp_cmd = (layers.get("smtp.req.command") or "").upper().strip()
-        smtp_rsp_code = (layers.get("smtp.rsp.code") or "").strip()
-        smtp_rsp_param = (layers.get("smtp.rsp.parameter") or "").upper()
-        smtp_req_param = (layers.get("smtp.req.parameter") or "").upper()
+        raw_cmd = layers.get("smtp.req.command") or ""
+        if isinstance(raw_cmd, list):
+            smtp_cmd = str(raw_cmd[0]).upper().strip() if raw_cmd else ""
+        else:
+            smtp_cmd = str(raw_cmd).upper().strip()
+
+        raw_code = layers.get("smtp.response.code") or layers.get("smtp.rsp.code") or ""
+        if isinstance(raw_code, list):
+            smtp_rsp_codes = [str(c).strip() for c in raw_code]
+            smtp_rsp_code = smtp_rsp_codes[0] if smtp_rsp_codes else ""
+        else:
+            smtp_rsp_codes = [str(raw_code).strip()]
+            smtp_rsp_code = str(raw_code).strip()
+
+        raw_rsp_param = layers.get("smtp.rsp.parameter") or ""
+        if isinstance(raw_rsp_param, list):
+            smtp_rsp_param = " ".join(str(p) for p in raw_rsp_param).upper()
+        else:
+            smtp_rsp_param = str(raw_rsp_param).upper()
+
+        raw_req_param = layers.get("smtp.req.parameter") or ""
+        if isinstance(raw_req_param, list):
+            smtp_req_param = " ".join(str(p) for p in raw_req_param).upper()
+        else:
+            smtp_req_param = str(raw_req_param).upper()
 
         # Detect TLS ClientHello (indicates TLS negotiation started)
         hs_type = layers.get("tls.handshake.type")
@@ -105,7 +126,7 @@ class SMTPSTARTTLSMachine:
             return
 
         if self._state == _SMTPState.INIT:
-            if smtp_rsp_code == "220":
+            if "220" in smtp_rsp_codes or smtp_rsp_code == "220":
                 self._state = _SMTPState.BANNER
 
         elif self._state == _SMTPState.BANNER:
@@ -113,7 +134,7 @@ class SMTPSTARTTLSMachine:
                 self._state = _SMTPState.EHLO_RESP
 
         elif self._state == _SMTPState.EHLO_RESP:
-            if smtp_rsp_code == "250" and "STARTTLS" in smtp_rsp_param:
+            if ("250" in smtp_rsp_codes or smtp_rsp_code == "250") and "STARTTLS" in smtp_rsp_param:
                 self._state = _SMTPState.STARTTLS_CAPABLE
                 self.starttls_advertised_pkt = pkt_num
                 self.events.append(STARTTLSEvent("advertised", pkt_num, "Server advertised STARTTLS in EHLO response"))
@@ -137,10 +158,10 @@ class SMTPSTARTTLSMachine:
                     f"Client sent {smtp_cmd} without STARTTLS — possible downgrade"))
 
         elif self._state == _SMTPState.STARTTLS_SENT:
-            if smtp_rsp_code == "220":
+            if "220" in smtp_rsp_codes or smtp_rsp_code == "220":
                 self._state = _SMTPState.STARTTLS_OK
                 self.events.append(STARTTLSEvent("tls_started", pkt_num, "Server ready for TLS"))
-            elif smtp_rsp_code.startswith("4") or smtp_rsp_code.startswith("5"):
+            elif any(c.startswith(("4", "5")) for c in smtp_rsp_codes):
                 self._state = _SMTPState.PLAINTEXT_CONTINUE
                 self.events.append(STARTTLSEvent("tls_failed", pkt_num,
                     f"STARTTLS rejected by server ({smtp_rsp_code})"))

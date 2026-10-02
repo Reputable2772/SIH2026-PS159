@@ -112,7 +112,7 @@ def identify_from_tshark_packets(packets: list[dict[str, Any]]) -> ApplicationPr
         layers = pkt.get("_source", {}).get("layers", {})
 
         # tshark protocol detection via dissector layers
-        if "smtp" in layers or layers.get("smtp.req.command") or layers.get("smtp.rsp.code"):
+        if "smtp" in layers or layers.get("smtp.req.command") or layers.get("smtp.rsp.code") or layers.get("smtp.response.code"):
             return ApplicationProtocol.SMTP
         if "imap" in layers or layers.get("imap.request") or layers.get("imap.response"):
             return ApplicationProtocol.IMAP
