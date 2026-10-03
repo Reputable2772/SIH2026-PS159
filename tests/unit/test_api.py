@@ -159,3 +159,44 @@ def test_invalid_upload_suffix(client):
     res = client.post("/api/analysis/upload", files=files)
     assert res.status_code == 400
     assert "Unsupported file type" in res.json()["detail"]
+
+
+def test_list_pcaps(client):
+    res = client.get("/api/pcaps")
+    assert res.status_code == 200
+    items = res.json()
+    assert isinstance(items, list)
+    if items:
+        first = items[0]
+        assert "filename" in first
+        assert "download_url" in first
+        assert "analyse_url" in first
+        assert "sha256_hash" in first
+
+
+def test_download_pcap(client):
+    res_list = client.get("/api/pcaps")
+    items = res_list.json()
+    if items:
+        filename = items[0]["filename"]
+        res_dl = client.get(f"/api/pcaps/{filename}")
+        assert res_dl.status_code == 200
+        assert len(res_dl.content) > 0
+
+
+def test_download_pcap_not_found(client):
+    res = client.get("/api/pcaps/non_existent_file.pcap")
+    assert res.status_code == 404
+
+
+def test_analyse_pcap_by_name(client):
+    res_list = client.get("/api/pcaps")
+    items = res_list.json()
+    if items:
+        filename = items[0]["filename"]
+        res_an = client.post(f"/api/pcaps/{filename}/analyse")
+        assert res_an.status_code == 200
+        data = res_an.json()
+        assert data["status"] == "pending"
+        assert "analysis_id" in data
+

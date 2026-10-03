@@ -6,6 +6,7 @@ REST API exposing PCAP analysis, session data, and report generation.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import tempfile
 import uuid
@@ -36,13 +37,7 @@ _background_tasks: set[asyncio.Task] = set()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan context manager that preloads demo PCAPs on startup."""
-    for pcap in _get_demo_pcaps():
-        aid = str(uuid.uuid4())
-        _analysis_status[aid] = "pending"
-        task = asyncio.create_task(_run_analysis(aid, str(pcap)))
-        _background_tasks.add(task)
-        task.add_done_callback(_background_tasks.discard)
+    """Lifespan context manager for background task management."""
     yield
     for task in list(_background_tasks):
         task.cancel()
@@ -217,6 +212,43 @@ async def get_findings(
 # ---------------------------------------------------------------------------
 
 
+PCAP_METADATA = {
+    "01_enterprise_secure_baseline.pcap": {
+        "title": "Enterprise Secure Baseline",
+        "description": "Modern TLS 1.3 / 1.2, ECDHE Forward Secrecy, valid certificates across SMTP, IMAP, and POP3.",
+        "category": "secure_baseline",
+    },
+    "02_legacy_cryptography_and_certs.pcap": {
+        "title": "Legacy Cryptography & Expired Certs",
+        "description": "Deprecated TLS 1.0/1.1, 3DES ciphers, expired X.509 certificates, and weak RSA key lengths.",
+        "category": "legacy_crypto",
+    },
+    "03_starttls_downgrade_and_cleartext.pcap": {
+        "title": "STARTTLS Downgrade & Cleartext Auth",
+        "description": "Active STARTTLS 454 rejection, fallback to plaintext, and cleartext credential harvesting.",
+        "category": "downgrade_attack",
+    },
+    "04_protocol_anomalies_and_fuzzing.pcap": {
+        "title": "Protocol Anomalies & Pipeline Fuzzing",
+        "description": "Command pipelining violations, malformed banners, buffer fuzzing, and ML outliers.",
+        "category": "anomalies",
+    },
+    "05_realworld_network_transports.pcap": {
+        "title": "Real-World Network Transports",
+        "description": "Multi-stream packet capture featuring mixed cipher negotiation, cross-protocol flows, and network latency.",
+        "category": "network_transports",
+    },
+}
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while chunk := f.read(65536):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def _get_demo_pcaps() -> list[Path]:
     if not DEMO_PCAPS_DIR.exists():
         return []
@@ -226,22 +258,84 @@ def _get_demo_pcaps() -> list[Path]:
     return sorted(files, key=lambda p: p.name)
 
 
+def _build_pcap_entry(p: Path) -> dict:
+    meta = PCAP_METADATA.get(p.name, {})
+    return {
+        "filename": p.name,
+        "title": meta.get("title", p.name),
+        "description": meta.get("description", "Packet capture file for forensic email security analysis."),
+        "category": meta.get("category", "general"),
+        "size_bytes": p.stat().st_size,
+        "sha256_hash": _sha256_file(p),
+        "download_url": f"/api/pcaps/{p.name}",
+        "analyse_url": f"/api/pcaps/{p.name}/analyse",
+    }
+
+
+@app.get("/api/pcaps")
 @app.get("/api/demo/pcaps")
-async def list_demo_pcaps():
-    """List available demo PCAP files."""
-    return [
-        {
-            "filename": p.name,
-            "path": str(p),
-            "size_bytes": p.stat().st_size,
-        }
-        for p in _get_demo_pcaps()
-    ]
+async def list_pcaps():
+    """List available PCAP files with metadata, checksums, and analysis trigger URLs."""
+    return [_build_pcap_entry(p) for p in _get_demo_pcaps()]
+
+
+@app.get("/api/pcaps/{filename}")
+@app.get("/api/demo/pcaps/{filename}")
+async def download_pcap(filename: str):
+    """Download raw PCAP capture file."""
+    pcap_path = DEMO_PCAPS_DIR / filename
+    if not pcap_path.exists() or not pcap_path.is_file():
+        raise HTTPException(status_code=404, detail=f"PCAP not found: {filename}")
+    return FileResponse(
+        str(pcap_path),
+        media_type="application/vnd.tcpdump.pcap",
+        filename=filename,
+    )
+
+
+@app.post("/api/pcaps/{filename}/analyse", response_model=AnalysisStatus)
+@app.post("/api/pcaps/{filename}/analyze", response_model=AnalysisStatus)
+async def analyse_pcap_by_name(
+    filename: str,
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+):
+    """Trigger a fresh analysis of an available PCAP from scratch."""
+    pcap_path = DEMO_PCAPS_DIR / filename
+    if not pcap_path.exists() or not pcap_path.is_file():
+        raise HTTPException(status_code=404, detail=f"PCAP not found: {filename}")
+
+    analysis_id = str(uuid.uuid4())
+    _analysis_status[analysis_id] = "pending"
+    background_tasks.add_task(_run_analysis, analysis_id, str(pcap_path))
+
+    return AnalysisStatus(analysis_id=analysis_id, status="pending")
+
+
+@app.post("/api/pcaps/{filename}/analyse/sync")
+@app.post("/api/pcaps/{filename}/analyze/sync")
+async def analyse_pcap_by_name_sync(filename: str):
+    """Trigger synchronous analysis of an available PCAP from scratch (returns complete result)."""
+    pcap_path = DEMO_PCAPS_DIR / filename
+    if not pcap_path.exists() or not pcap_path.is_file():
+        raise HTTPException(status_code=404, detail=f"PCAP not found: {filename}")
+
+    analysis_id = str(uuid.uuid4())
+    _analysis_status[analysis_id] = "running"
+    try:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, analyse_pcap, str(pcap_path), analysis_id)
+        _analyses[analysis_id] = result
+        _analysis_status[analysis_id] = "done"
+        return result.model_dump(mode="json")
+    except Exception as exc:
+        _analysis_status[analysis_id] = "error"
+        _analysis_errors[analysis_id] = str(exc)
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}")
 
 
 @app.post("/api/demo/run")
 async def run_demo(background_tasks: BackgroundTasks = BackgroundTasks()):
-    """Run analysis on all demo PCAPs."""
+    """Run analysis on all available demo PCAPs."""
     all_pcaps = _get_demo_pcaps()
     if not all_pcaps:
         raise HTTPException(
