@@ -1,8 +1,9 @@
 import React, { useState } from 'react'
 import { Terminal, Eye, ChevronDown, ChevronRight, Hash } from 'lucide-react'
 
-export default function RawPacketsView({ session }) {
+export default function RawPacketsView({ session, highlightFrame = null }) {
   const [selectedPkt, setSelectedPkt] = useState(null)
+  const [frameFilter, setFrameFilter] = useState('')
 
   if (!session) return null
 
@@ -121,9 +122,25 @@ export default function RawPacketsView({ session }) {
   // Sort packets by frame number
   packets.sort((a, b) => a.frame - b.frame)
 
+  // Auto-select highlightFrame if provided and not yet selected
+  React.useEffect(() => {
+    if (highlightFrame != null) {
+      const match = packets.find(p => p.frame === Number(highlightFrame))
+      if (match) setSelectedPkt(match)
+    }
+  }, [highlightFrame])
+
+  const filteredPackets = frameFilter.trim()
+    ? packets.filter(p =>
+        String(p.frame).includes(frameFilter) ||
+        p.proto.toLowerCase().includes(frameFilter.toLowerCase()) ||
+        p.info.toLowerCase().includes(frameFilter.toLowerCase())
+      )
+    : packets
+
   return (
     <div className="card">
-      <div className="card-header">
+      <div className="card-header" style={{ flexWrap: 'wrap', gap: '0.75rem' }}>
         <div>
           <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
             <Terminal size={15} color="var(--accent)" />
@@ -133,9 +150,27 @@ export default function RawPacketsView({ session }) {
             Selective packet frame sequence providing frame-level provenance for security findings.
           </div>
         </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <input
+            type="text"
+            placeholder="Filter frames, protocol, text..."
+            value={frameFilter}
+            onChange={(e) => setFrameFilter(e.target.value)}
+            style={{
+              fontSize: '0.76rem',
+              padding: '0.3rem 0.6rem',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border)',
+              background: 'var(--bg-card-subtle)',
+              color: 'var(--text)',
+              width: 220
+            }}
+          />
+        </div>
       </div>
 
-      <div className="table-container" style={{ maxHeight: 380, overflowY: 'auto' }}>
+      <div className="table-container" style={{ maxHeight: 420, overflowY: 'auto' }}>
         <table className="data-table">
           <thead>
             <tr>
@@ -149,10 +184,11 @@ export default function RawPacketsView({ session }) {
             </tr>
           </thead>
           <tbody>
-            {packets.map((pkt) => {
+            {filteredPackets.map((pkt) => {
               const isSelected = selectedPkt?.frame === pkt.frame
+              const isHighlighted = highlightFrame != null && pkt.frame === Number(highlightFrame)
               const isTls = pkt.proto === 'TLS'
-              const isError = pkt.info.includes('454') || pkt.info.includes('invalid')
+              const isError = pkt.info.includes('454') || pkt.info.includes('invalid') || pkt.info.includes('temporary')
 
               return (
                 <React.Fragment key={pkt.frame}>
@@ -160,7 +196,8 @@ export default function RawPacketsView({ session }) {
                     onClick={() => setSelectedPkt(isSelected ? null : pkt)}
                     style={{
                       cursor: 'pointer',
-                      background: isSelected ? 'var(--accent-dim)' : undefined,
+                      background: isSelected ? 'var(--accent-dim)' : isHighlighted ? 'rgba(56, 189, 248, 0.1)' : undefined,
+                      borderLeft: isHighlighted ? '3px solid var(--accent)' : '3px solid transparent',
                     }}
                   >
                     <td>
