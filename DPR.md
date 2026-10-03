@@ -500,17 +500,15 @@ frontend/src/
 ## 13. Empirical Benchmarking & Forensic Accuracy Evaluation
 
 ### 13.1 Benchmark Corpus & Canonical Scenarios
-The framework includes a comprehensive evaluation suite (`benchmark/evaluate.py`) that tests detection accuracy against seven synthetic PCAP scenarios generated via Scapy:
+The framework includes a comprehensive evaluation suite (`benchmark/evaluate.py`) that tests detection accuracy against five consolidated multi-stream PCAP scenarios generated via Scapy (comprising 19 total forensic sessions):
 
-| ID | PCAP File | Protocol | Scenario Description | Expected Ground Truth |
+| ID | PCAP File | Protocols | Scenario Description | Expected Ground Truth |
 |---|---|---|---|---|
-| **01** | `01_secure_tls12.pcap` | SMTP | TLS 1.2, ECDHE, valid 2048-bit CA cert | Clean session; 0 rule findings |
-| **02** | `02_legacy_tls10.pcap` | SMTP | TLS 1.0 handshake (deprecated) | Flags `deprecated_tls`, `weak_cipher`, `no_fs` |
-| **03** | `03_weak_cipher.pcap` | SMTP | 3DES cipher with static RSA key exchange | Flags `weak_cipher` and `no_forward_secrecy` |
-| **04** | `04_expired_cert.pcap` | IMAP | Direct TLS with expired certificate (2019–2020) | Flags `expired_certificate` (Critical) |
-| **05** | `05_starttls_fallback.pcap` | SMTP | STARTTLS rejected with 454; cleartext auth sent | Flags `starttls_anomaly` and `plaintext_auth` |
-| **06** | `06_anomalous_handshake.pcap`| SMTP | 1024-bit weak RSA key, static RSA exchange | Flags `weak_key`, `no_forward_secrecy`, `weak_cipher` |
-| **07** | `07_plaintext_smtp.pcap` | SMTP | Unencrypted cleartext SMTP without TLS | Flags `starttls_anomaly` (No TLS observed) |
+| **01** | `01_enterprise_secure_baseline.pcap` | SMTP, IMAP, POP3 | Modern multi-protocol baseline (TLS 1.3 encrypted certs, TLS 1.2 ECDHE, valid CA certs) | Clean sessions; 0 rule findings; Score 99/100 (MINIMAL) |
+| **02** | `02_legacy_cryptography_and_certs.pcap` | SMTP, SMTPS, IMAPS, POP3S | Cryptographic obsolescence: TLS 1.0 BEAST, 3DES Sweet32 static RSA, expired cert, 1024-bit RSA self-signed | Flags `deprecated_tls`, `weak_cipher`, `no_forward_secrecy`, `expired_certificate`, `weak_key`, `invalid_certificate` |
+| **03** | `03_starttls_downgrade_and_cleartext.pcap` | SMTP, IMAP, POP3 | Active MitM tampering: 454 downgrade fallback, stripped STARTTLS capability, cleartext credential harvesting | Flags `starttls_anomaly` (downgrade) and `plaintext_auth` |
+| **04** | `04_protocol_anomalies_and_fuzzing.pcap` | SMTP, SMTPS, Submission | Behavioral deviations: HTTP probes on port 25, 2KB buffer fuzzing, corrupt TLS records, split ClientHellos | Flags `starttls_anomaly` and ML behavioural anomalies |
+| **05** | `05_realworld_network_transports.pcap` | SMTP, IMAP, POP3 | Real-world capture edge cases: packet loss, duplicate ACKs, abrupt RSTs, truncated certs, out-of-order overlap, SYN scan | Flags `starttls_anomaly` and ML transport anomalies |
 
 ### 13.2 Live Benchmark Execution Metrics
 Results from the automated evaluation suite executed against the live prototype:
@@ -519,13 +517,13 @@ Results from the automated evaluation suite executed against the live prototype:
 ============================================================
 SecureMailScope Benchmark / Evaluation Summary
 ============================================================
-PCAPs processed        : 7
-Sessions analyzed      : 7
-Critical findings      : 4
-High findings          : 9
+PCAPs processed        : 5
+Sessions analyzed      : 19
+Critical findings      : 3
+High findings          : 14
 
 Rule Engine Detection:
-  True Positives (TP)  : 6
+  True Positives (TP)  : 4
   False Positives (FP) : 0
   False Negatives (FN) : 0
   True Negatives (TN)  : 1
@@ -534,13 +532,13 @@ Rule Engine Detection:
   F1 Score             : 1.000 (100.0%)
 
 ML Anomaly Detection:
-  True Positives (TP)  : 5
-  False Positives (FP) : 2
+  True Positives (TP)  : 4
+  False Positives (FP) : 1
   False Negatives (FN) : 0
   True Negatives (TN)  : 0
-  Precision            : 0.714 (71.4%)
+  Precision            : 0.800 (80.0%)
   Recall               : 1.000 (100.0%)
-  F1 Score             : 0.833 (83.3%)
+  F1 Score             : 0.889 (88.9%)
 
 Execution Performance:
   Mean Analysis Time   : 0.381s per PCAP

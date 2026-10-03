@@ -133,19 +133,15 @@ just compose-down
 just gen-pcaps
 ```
 
-This creates canonical evaluation PCAPs in `demo_pcaps/`, representing 38 total test scenarios covering baseline protocols, messy edge cases, downgrade attacks, and real-world captures:
+This creates 5 consolidated multi-stream evaluation PCAPs in `demo_pcaps/` (containing 19 total sessions) that merge all protocol conditions, active attacks, and transport edge cases without visual clutter:
 
-| PCAP | Scenario | Expected Findings |
+| PCAP | Scenario / Multi-Stream Coverage | Expected Posture |
 |---|---|---|
-| `01_secure_tls12.pcap` | Secure TLS 1.2 SMTP | None |
-| `02_legacy_tls10.pcap` | Deprecated TLS 1.0 | deprecated_tls |
-| `03_weak_cipher.pcap` | RSA key exchange (no FS) | weak_cipher, no_forward_secrecy |
-| `04_expired_cert.pcap` | Expired certificate | expired_certificate |
-| `05_starttls_fallback.pcap` | STARTTLS rejected → cleartext | starttls_anomaly |
-| `06_anomalous_handshake.pcap` | Weak 1024-bit key | weak_key |
-| `07_plaintext_smtp.pcap` | No TLS at all | starttls_anomaly |
-| `08-25_*.pcap` | Messy edge cases, MITM attacks, retransmissions, fuzzing | Various protocol & TLS anomalies |
-| `26-38_*.pcap` | Real-world Wireshark and Arkime packet captures | Live SMTP/IMAP/POP3 captures |
+| `01_enterprise_secure_baseline.pcap` | **Enterprise Secure Baseline** (3 streams: SMTP TLS 1.3 encrypted certs RFC 8446, IMAPS TLS 1.2 ECDHE-GCM, POP3S TLS 1.2) | 99/100 (MINIMAL) — 0 rule findings |
+| `02_legacy_cryptography_and_certs.pcap` | **Cryptographic Degradation & Cert Failures** (4 streams: TLS 1.0 BEAST, 3DES Sweet32 static RSA no-PFS, expired X.509, 1024-bit key self-signed) | 0/100 (CRITICAL) — deprecated_tls, weak_cipher, no_forward_secrecy, expired_certificate, weak_key, invalid_certificate |
+| `03_starttls_downgrade_and_cleartext.pcap` | **Active MitM Downgrades & Cleartext** (3 streams: SMTP 454 STARTTLS stripping fallback, IMAP plaintext LOGIN, POP3 credential spray) | 5/100 (CRITICAL) — starttls_anomaly, plaintext_auth |
+| `04_protocol_anomalies_and_fuzzing.pcap` | **Protocol Anomalies & Malformed Payloads** (4 streams: HTTP probe on port 25, 2KB buffer fuzzing, corrupt TLS record layer, split ClientHello) | 54/100 (MEDIUM) — starttls_anomaly, ML anomalies |
+| `05_realworld_network_transports.pcap` | **Real-World Network Transport Chaos** (5 streams: packet loss & RST, truncated cert cutoff, out-of-order overlap, SYN scan, pipelining desync) | 49/100 (HIGH) — starttls_anomaly, ML anomalies |
 
 ---
 
