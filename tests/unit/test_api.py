@@ -199,4 +199,3 @@ def test_analyse_pcap_by_name(client):
         data = res_an.json()
         assert data["status"] == "pending"
         assert "analysis_id" in data
-

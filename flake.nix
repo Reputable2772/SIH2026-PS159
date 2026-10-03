@@ -64,7 +64,7 @@
             echo "  Node    : $(node --version)"
             echo ""
             echo "  Commands:"
-            echo "    just dev          – Start backend + frontend"
+            echo "    just backend      – Start backend API server"
             echo "    just demo         – Run offline demo"
             echo "    just gen-pcaps    – Generate test PCAPs"
             echo "    just benchmark    – Run evaluation suite"

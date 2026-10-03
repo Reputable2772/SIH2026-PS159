@@ -263,7 +263,9 @@ def _build_pcap_entry(p: Path) -> dict:
     return {
         "filename": p.name,
         "title": meta.get("title", p.name),
-        "description": meta.get("description", "Packet capture file for forensic email security analysis."),
+        "description": meta.get(
+            "description", "Packet capture file for forensic email security analysis."
+        ),
         "category": meta.get("category", "general"),
         "size_bytes": p.stat().st_size,
         "sha256_hash": _sha256_file(p),
@@ -330,7 +332,7 @@ async def analyse_pcap_by_name_sync(filename: str):
     except Exception as exc:
         _analysis_status[analysis_id] = "error"
         _analysis_errors[analysis_id] = str(exc)
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}") from exc
 
 
 @app.post("/api/demo/run")

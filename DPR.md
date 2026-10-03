@@ -469,31 +469,22 @@ The backend exposes an asynchronous RESTful interface implemented in FastAPI:
 
 ---
 
-## 12. Frontend Dashboard Architecture (`frontend/src/`)
+## 12. REST API & Forensic Integration Architecture (`backend/api/`)
 
-The user interface is a responsive Single Page Application (SPA) built on **React 18** and **Vite**:
+The core engine is exposed as a modular, high-throughput REST API built on **FastAPI** and **Pydantic v2**:
 
 ```
-frontend/src/
-├── App.jsx             # Root application shell, header, and route switcher
-├── main.jsx            # React DOM hydration root
-├── index.css           # Glassmorphism dark-mode theme, CSS variables, utility tokens
-├── hooks/
-│   └── useApi.js       # Reusable API fetch and polling hook
-└── pages/
-    ├── Overview.jsx    # Metrics cards, risk gauges, findings chart, sessions preview
-    ├── Upload.jsx      # Drag-and-drop PCAP file upload + demo scenario selector
-    ├── Sessions.jsx    # Tabular session explorer with protocol & TLS filtering
-    ├── SessionDetail.jsx # Deep forensic inspector for 5-tuples, certificates, FSM
-    ├── Findings.jsx    # Filterable vulnerability matrix with CVE references
-    └── Reports.jsx     # In-browser preview & download for PDF, HTML, and JSON
+backend/api/
+├── main.py             # FastAPI routing, lifespan, ingestion, and PCAP endpoints
+└── __init__.py         # Package initialization
 ```
 
-### Key UI Features:
-- **Zero External UI Bloat:** Custom crafted, lightweight CSS design system without heavy component libraries.
-- **Glassmorphic Security Dashboard:** High-contrast dark theme designed specifically for network security analysts.
-- **Certificate Inspector:** Visualizes X.509 certificate chains, public key parameters, validity periods, and SANs directly from passive traffic.
-- **Demo Scenario Switcher:** Pre-loaded with the 7 canonical evaluation scenarios for immediate demonstration.
+### Key API Capabilities:
+- **PCAP Ingestion & Re-Analysis:** Exposes `GET /api/pcaps` and `GET /api/pcaps/{filename}` for direct inspection and raw capture downloads, alongside `POST /api/pcaps/{filename}/analyse` to re-analyze any capture from scratch asynchronously or synchronously (`/sync`).
+- **Granular Stream Inspection:** Endpoints `GET /api/analysis/{aid}/sessions` and `GET /api/analysis/{aid}/sessions/{sid}` expose 5-tuple forensic flows, protocol state banners, X.509 chains, and layer decodes.
+- **Vulnerability Querying:** Endpoints `GET /api/analysis/{aid}/findings` support parameter filtering by severity (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`) and category.
+- **Multi-Format Report Generation:** Direct programmatic generation of machine-readable JSON (`/report/json`), standalone HTML (`/report/html`), and formal forensic PDF executive reports (`/report/pdf`).
+- **Interactive Documentation:** Automatic OpenAPI 3.1.0 specifications with Swagger UI at `/docs` and ReDoc at `/redoc`.
 
 ---
 
@@ -567,27 +558,23 @@ The native development environment is packaged via Nix Flakes to guarantee zero 
 - **Fast Startup:** Eliminates local source compilation; shell startup completes in $<0.2\text{s}$.
 
 ### 14.2 Containerization Architecture (`compose.yaml` / `podman-compose.yml`)
-To support containerized deployments, SecureMailScope provides a multi-container compose architecture:
-1. **Backend Container (`backend/Dockerfile`):**
-   - Built on `python:3.12-slim-bookworm`.
-   - Packages `tshark`, `openssl`, and `tcpdump`.
-   - Pre-bakes the trained Isolation Forest ML model into the container image.
-   - Binds port `8000` with automated healthcheck.
-2. **Frontend Container (`frontend/Dockerfile`):**
-   - Multi-stage build (`node:22-alpine` for Vite build $\to$ `caddy:2-alpine` for serving).
-   - Deploys custom `frontend/Caddyfile` on port `5173`.
-   - Automatically reverse-proxies `/api/*` requests to `http://backend:8000`.
+To support containerized deployments, SecureMailScope provides a containerized service:
+- **Backend Container (`backend/Dockerfile`):**
+  - Built on `python:3.12-slim-bookworm`.
+  - Packages `tshark`, `openssl`, and `tcpdump`.
+  - Pre-bakes the trained Isolation Forest ML model into the container image.
+  - Binds port `8000` with automated healthcheck (`/api/health`).
 
 ### 14.3 Developer Automation (`justfile`)
 All operational tasks are orchestrated through `just`:
 ```bash
 just check           # Validates forensic binaries and python libraries
-just test            # Runs all 97 automated pytest unit tests
-just gen-pcaps       # Synthesizes 7 canonical test PCAPs in user space
+just test            # Runs all 105 automated pytest unit tests
+just gen-pcaps       # Synthesizes canonical test PCAPs in user space
 just benchmark       # Executes precision/recall evaluation benchmark
 just demo            # Runs full offline CLI demonstration & PDF generation
 just analyse <pcap>  # Analyses arbitrary PCAP and outputs JSON/HTML/PDF
-just dev             # Displays dev startup commands
+just backend         # Starts backend API server with hot-reload
 just compose-up      # Starts container stack via podman-compose
 just compose-down    # Shuts down container stack
 ```

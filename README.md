@@ -104,25 +104,41 @@ just check
 ```bash
 just backend
 # API available at http://localhost:8000
-# Docs at http://localhost:8000/docs
+# Interactive Swagger docs at http://localhost:8000/docs
+# ReDoc at http://localhost:8000/redoc
 ```
 
-### Frontend Dashboard
+### Containerized Service (Podman / Docker Compose)
 
 ```bash
-just frontend-install   # First time only
-just frontend
-# Dashboard at http://localhost:5173
-```
-
-### Containerized Stack (Podman / Compose)
-
-```bash
-# Build and start backend + frontend (with Caddy reverse proxy)
+# Build and start backend container service
 just compose-up
 
-# Stop services
+# Stop container service
 just compose-down
+```
+
+---
+
+## REST API & Available PCAPs
+
+The backend provides direct endpoints for listing, downloading, and re-analyzing packet captures from scratch:
+
+```bash
+# 1. List available PCAPs with metadata and SHA-256 hashes
+curl -s http://localhost:8000/api/pcaps | python3 -m json.tool
+
+# 2. Download a raw PCAP capture file
+curl -O -J http://localhost:8000/api/pcaps/01_enterprise_secure_baseline.pcap
+
+# 3. Trigger a fresh analysis of an available PCAP from scratch (asynchronous)
+curl -X POST http://localhost:8000/api/pcaps/01_enterprise_secure_baseline.pcap/analyse
+
+# 4. Trigger synchronous analysis from scratch (returns complete AnalysisResult JSON)
+curl -X POST http://localhost:8000/api/pcaps/01_enterprise_secure_baseline.pcap/analyse/sync
+
+# 5. Upload and analyze an arbitrary external PCAP
+curl -X POST http://localhost:8000/api/analysis/upload -F "file=@my_capture.pcap"
 ```
 
 ---
@@ -168,10 +184,10 @@ Produces precision/recall/F1 metrics for both rule engine and ML anomaly detecti
 ## Tests & Code Quality
 
 ```bash
-# Run unit & integration test suite (101 tests)
+# Run unit & integration test suite (105 tests)
 just test
 
-# Run code style, linters, and frontend build checks
+# Run code style and linter checks
 just lint
 
 # Auto-format and fix python code
@@ -259,7 +275,6 @@ Do not use for compliance or regulatory purposes.
 │   ├── anomaly/           — ML anomaly detection
 │   ├── reporting/         — JSON/HTML/PDF report generation
 │   └── models/            — Pydantic data models
-├── frontend/              — React dashboard (Vite)
 ├── demo_pcaps/            — Synthetic test PCAPs
 ├── benchmark/             — Evaluation suite
 ├── scripts/               — PCAP generation + demo

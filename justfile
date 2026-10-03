@@ -85,16 +85,6 @@ analyse pcap:
 train-model:
     PYTHONPATH="." {{PYTHON}} -c "from backend.anomaly.detector import TLSAnomalyDetector; det = TLSAnomalyDetector(); det.train(); det.save(); print('Anomaly model trained and saved.')"
 
-# ─── Frontend Build ──────────────────────────────────────────────────────────
-
-# Install frontend dependencies
-frontend-install:
-    cd {{FRONTEND_DIR}} && npm install
-
-# Build production frontend
-frontend-build:
-    cd {{FRONTEND_DIR}} && npm run build
-
 # ─── Utilities ──────────────────────────────────────────────────────────────
 
 # Verify environment is properly set up

@@ -191,10 +191,9 @@ def demo():
 
     print()
     banner("Demo Complete")
-    print("  To start the dashboard:")
-    print("    Backend:  just backend")
-    print("    Frontend: just frontend")
-    print("    Then open: http://localhost:5173")
+    print("  To start the backend API server:")
+    print("    just backend")
+    print("    API documentation: http://localhost:8000/docs")
     print()
 
 
