@@ -792,20 +792,18 @@ async def analyse_pcap_by_name_sync(
     "/api/demo/run",
     response_model=DemoRunResponse,
     tags=["Analysis & Ingestion"],
-    summary="Dispatch background analyses for all 5 canonical demo PCAPs",
+    summary="Dispatch background analyses for all canonical demo PCAPs",
 )
 async def run_demo(background_tasks: BackgroundTasks = BackgroundTasks()):
     """
-    Run analysis on all 5 canonical demo PCAPs in demo_pcaps/.
+    Run analysis on all canonical demo PCAPs in demo_pcaps/.
 
     Dispatches background jobs for each scenario and returns the list of
     allocated analysis IDs.
     """
     all_pcaps = _get_demo_pcaps()
     if not all_pcaps:
-        raise HTTPException(
-            status_code=503, detail="Demo PCAPs not generated yet. Run: just gen-pcaps"
-        )
+        raise HTTPException(status_code=503, detail="No demo PCAPs found in demo_pcaps/")
 
     demo_ids = []
     for pcap in all_pcaps:

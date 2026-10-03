@@ -47,17 +47,8 @@ def demo():
     # Check PCAPs
     pcaps = sorted(DEMO_DIR.glob("*.pcap"))
     if not pcaps:
-        print("[!] No demo PCAPs found. Generating...")
-        import subprocess
-
-        result = subprocess.run(
-            [sys.executable, str(SCRIPTS_DIR / "generate_pcaps.py")],
-            cwd=str(SCRIPTS_DIR.parent),
-        )
-        if result.returncode != 0:
-            print("[ERROR] PCAP generation failed. Ensure tshark is available.")
-            sys.exit(1)
-        pcaps = sorted(DEMO_DIR.glob("*.pcap"))
+        print("[ERROR] No demo PCAPs found in demo_pcaps/.")
+        sys.exit(1)
 
     print(f"  Found {len(pcaps)} demo PCAPs")
     for p in pcaps:

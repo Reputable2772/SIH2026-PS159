@@ -44,7 +44,7 @@ EXPECTED_RESULTS = {
             "no_forward_secrecy",
             "expired_certificate",
             "weak_key",
-            "invalid_certificate",
+            "weak_signature",
         ],
         "cert_observable": True,
         "anomalous": True,
@@ -59,23 +59,7 @@ EXPECTED_RESULTS = {
         ],
         "cert_observable": False,
         "anomalous": True,
-        "description": "Active STARTTLS Stripping / 454 Fallback & Cleartext Exfiltration",
-    },
-    "04_protocol_anomalies_and_fuzzing.pcap": {
-        "protocol": "SMTP",
-        "has_tls": False,
-        "expected_finding_categories": ["starttls_anomaly"],
-        "cert_observable": False,
-        "anomalous": True,
-        "description": "Protocol Desync, Web Probes, Buffer Fuzzing & Corrupt Records",
-    },
-    "05_realworld_network_transports.pcap": {
-        "protocol": "SMTP / IMAP / POP3",
-        "has_tls": True,
-        "expected_finding_categories": ["starttls_anomaly"],
-        "cert_observable": False,
-        "anomalous": True,
-        "description": "Real-World Network Degradation, Packet Loss, Truncated Certs & RSTs",
+        "description": "Active STARTTLS Downgrade / Stripping & Plaintext Credential Exposure",
     },
 }
 
@@ -109,8 +93,7 @@ class Metrics:
 def evaluate_all() -> dict:
     """Run evaluation against all available demo PCAPs."""
     if not DEMO_DIR.exists() or not list(DEMO_DIR.glob("*.pcap")):
-        print("[ERROR] No demo PCAPs found.")
-        print("        Run: python scripts/generate_pcaps.py")
+        print("[ERROR] No demo PCAPs found in demo_pcaps/.")
         sys.exit(1)
 
     pcaps = sorted(DEMO_DIR.glob("*.pcap"))

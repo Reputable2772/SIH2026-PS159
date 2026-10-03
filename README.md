@@ -143,21 +143,15 @@ curl -X POST http://localhost:8000/api/analysis/upload -F "file=@my_capture.pcap
 
 ---
 
-## Generating Test PCAPs
+## Authentic Evaluation PCAPs
 
-```bash
-just gen-pcaps
-```
+SecureMailScope ships with 3 canonical, authentic real-world evaluation PCAPs in `demo_pcaps/` sourced directly from authoritative network forensics archives (Zeek project security traces, Wireshark Foundation canonical captures, and Chris Sanders network research):
 
-This creates 5 consolidated multi-stream evaluation PCAPs in `demo_pcaps/` (containing 19 total sessions) that merge all protocol conditions, active attacks, and transport edge cases without visual clutter:
-
-| PCAP | Scenario / Multi-Stream Coverage | Expected Posture |
+| PCAP | Scenario / Forensic Provenance | Expected Posture |
 |---|---|---|
-| `01_enterprise_secure_baseline.pcap` | **Enterprise Secure Baseline** (3 streams: SMTP TLS 1.3 encrypted certs RFC 8446, IMAPS TLS 1.2 ECDHE-GCM, POP3S TLS 1.2) | 99/100 (MINIMAL) — 0 rule findings |
-| `02_legacy_cryptography_and_certs.pcap` | **Cryptographic Degradation & Cert Failures** (4 streams: TLS 1.0 BEAST, 3DES Sweet32 static RSA no-PFS, expired X.509, 1024-bit key self-signed) | 0/100 (CRITICAL) — deprecated_tls, weak_cipher, no_forward_secrecy, expired_certificate, weak_key, invalid_certificate |
-| `03_starttls_downgrade_and_cleartext.pcap` | **Active MitM Downgrades & Cleartext** (3 streams: SMTP 454 STARTTLS stripping fallback, IMAP plaintext LOGIN, POP3 credential spray) | 5/100 (CRITICAL) — starttls_anomaly, plaintext_auth |
-| `04_protocol_anomalies_and_fuzzing.pcap` | **Protocol Anomalies & Malformed Payloads** (4 streams: HTTP probe on port 25, 2KB buffer fuzzing, corrupt TLS record layer, split ClientHello) | 54/100 (MEDIUM) — starttls_anomaly, ML anomalies |
-| `05_realworld_network_transports.pcap` | **Real-World Network Transport Chaos** (5 streams: packet loss & RST, truncated cert cutoff, out-of-order overlap, SYN scan, pipelining desync) | 49/100 (HIGH) — starttls_anomaly, ML anomalies |
+| `01_enterprise_secure_baseline.pcap` | **Enterprise Secure Baseline** (3 sessions: Google MX SMTP TLS 1.2 with ECDHE-GCM, 1&1 IMAP TLS 1.2 with ECDHE, Dovecot POP3 TLS 1.2 with DHE) | 100/100 (MINIMAL) — 0 findings (Negative Control) |
+| `02_legacy_cryptography_and_certs.pcap` | **Cryptographic Degradation & Cert Failures** (3 sessions: SSL 3.0 & TLS 1.0, 3DES Sweet32, RC4, static RSA no-PFS, expired X.509, 1024-bit RSA, MD5 signature) | 0/100 (CRITICAL) — deprecated_tls, weak_cipher, no_forward_secrecy, expired_certificate, weak_key, weak_signature |
+| `03_starttls_downgrade_and_cleartext.pcap` | **Active STARTTLS Downgrades & Plaintext Auth** (3 sessions: Postfix STARTTLS fallback, intercepted cleartext AUTH LOGIN base64 credentials, unencrypted IMAP) | 0/100 (CRITICAL) — starttls_anomaly, plaintext_auth, ML anomaly |
 
 ---
 
@@ -275,10 +269,9 @@ Do not use for compliance or regulatory purposes.
 │   ├── anomaly/           — ML anomaly detection
 │   ├── reporting/         — JSON/HTML/PDF report generation
 │   └── models/            — Pydantic data models
-├── demo_pcaps/            — Synthetic test PCAPs
-├── benchmark/             — Evaluation suite
-├── scripts/               — PCAP generation + offline demo
+├── demo_pcaps/            — Authentic real-world test PCAPs (Zeek, Wireshark, Postfix)
+├── benchmark/             — Evaluation suite & detection accuracy metrics
+├── scripts/               — Offline demo runner (scripts/demo.py)
 ├── tests/                 — Automated unit tests (109 tests, 100% passing)
-├── DPR.md                 — Detailed Project Report (comprehensive technical specification)
-└── evidence/              — Benchmark & evaluation artifacts
+└── DPR.md                 — Detailed Project Report (comprehensive technical specification)
 ```

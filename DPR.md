@@ -505,15 +505,13 @@ To keep the project as lean, maintainable, and unified as possible, all API docu
 ## 12. Empirical Benchmarking & Forensic Accuracy Evaluation
 
 ### 12.1 Benchmark Corpus & Canonical Scenarios
-The framework includes a comprehensive evaluation suite (`benchmark/evaluate.py`) that tests detection accuracy against five consolidated multi-stream PCAP scenarios generated via Scapy (comprising 19 total forensic sessions):
+The framework includes a comprehensive evaluation suite (`benchmark/evaluate.py`) that tests detection accuracy against three canonical, authentic real-world PCAP scenarios sourced directly from authoritative network forensics archives (Zeek project security traces, Wireshark Foundation canonical captures, and Chris Sanders network research), comprising 9 total forensic sessions:
 
-| ID | PCAP File | Protocols | Scenario Description | Expected Ground Truth |
-|---|---|---|---|---|
-| **01** | `01_enterprise_secure_baseline.pcap` | SMTP, IMAP, POP3 | Modern multi-protocol baseline (TLS 1.3 encrypted certs, TLS 1.2 ECDHE, valid CA certs) | Clean sessions; 0 rule findings; Score 99/100 (MINIMAL) |
-| **02** | `02_legacy_cryptography_and_certs.pcap` | SMTP, SMTPS, IMAPS, POP3S | Cryptographic obsolescence: TLS 1.0 BEAST, 3DES Sweet32 static RSA, expired cert, 1024-bit RSA self-signed | Flags `deprecated_tls`, `weak_cipher`, `no_forward_secrecy`, `expired_certificate`, `weak_key`, `invalid_certificate` |
-| **03** | `03_starttls_downgrade_and_cleartext.pcap` | SMTP, IMAP, POP3 | Active MitM tampering: 454 downgrade fallback, stripped STARTTLS capability, cleartext credential harvesting | Flags `starttls_anomaly` (downgrade) and `plaintext_auth` |
-| **04** | `04_protocol_anomalies_and_fuzzing.pcap` | SMTP, SMTPS, Submission | Behavioral deviations: HTTP probes on port 25, 2KB buffer fuzzing, corrupt TLS records, split ClientHellos | Flags `starttls_anomaly` and ML behavioural anomalies |
-| **05** | `05_realworld_network_transports.pcap` | SMTP, IMAP, POP3 | Real-world capture edge cases: packet loss, duplicate ACKs, abrupt RSTs, truncated certs, out-of-order overlap, SYN scan | Flags `starttls_anomaly` and ML transport anomalies |
+| ID | PCAP File | Protocols | Scenario Description | Forensic Provenance | Expected Ground Truth |
+|---|---|---|---|---|---|
+| **01** | `01_enterprise_secure_baseline.pcap` | SMTP (25), IMAP (143), POP3 (110) | Modern enterprise baseline: TLS 1.2 with Perfect Forward Secrecy (`ECDHE-RSA-AES128-GCM`, `DHE-RSA-AES256-GCM`), valid CA cert chains, full TCP window scaling | Zeek TLS Traces (`smtp-starttls`, `imap-starttls`, `pop3-starttls`) to Google MX (`mx.google.com`), 1&1 Enterprise (`migmx013`), and Dovecot | Clean sessions; 0 rule findings; Score 100.0/100 (MINIMAL — Negative Control) |
+| **02** | `02_legacy_cryptography_and_certs.pcap` | SMTP (25), TLS (443) | Severe cryptographic obsolescence: SSL 3.0, TLS 1.0, 3DES Sweet32, RC4-128, static RSA without Forward Secrecy, expired X.509 certs, weak 1024-bit RSA key, broken MD5 signature (`md5WithRSAPublicKey`) | Wireshark Foundation canonical forensics archive (`rsasnakeoil2.pcap`) and Google MX legacy RC4 capture (`smtp-starttls.pcap`) | Flags `deprecated_tls`, `weak_cipher`, `no_forward_secrecy`, `expired_certificate`, `weak_key`, `weak_signature`; Score 0.0/100 (CRITICAL) |
+| **03** | `03_starttls_downgrade_and_cleartext.pcap` | SMTP (25, 587), IMAP (143) | Active MitM downgrade and unencrypted credential theft: Postfix STARTTLS capability stripping / fallback, cleartext `AUTH LOGIN` with intercepted base64 credentials, unencrypted IMAP stream | Chris Sanders Applied Network Defense (`mail_sender_client_1.pcapng`), intercepted SMTP trace (`sample-imf.pcap`), and cleartext IMAP (`imap.cap`) | Flags `starttls_anomaly` (downgrade), `plaintext_auth`, missing TLS; Score 0.0/100 (CRITICAL) |
 
 ### 12.2 Live Benchmark Execution Metrics
 Results from the automated evaluation suite executed against the live prototype:
@@ -522,13 +520,13 @@ Results from the automated evaluation suite executed against the live prototype:
 ============================================================
 SecureMailScope Benchmark / Evaluation Summary
 ============================================================
-PCAPs processed        : 5
-Sessions analyzed      : 19
-Critical findings      : 3
-High findings          : 14
+PCAPs processed        : 3
+Sessions analyzed      : 9
+Critical findings      : 11
+High findings          : 15
 
 Rule Engine Detection:
-  True Positives (TP)  : 4
+  True Positives (TP)  : 2
   False Positives (FP) : 0
   False Negatives (FN) : 0
   True Negatives (TN)  : 1
@@ -537,22 +535,22 @@ Rule Engine Detection:
   F1 Score             : 1.000 (100.0%)
 
 ML Anomaly Detection:
-  True Positives (TP)  : 4
-  False Positives (FP) : 1
+  True Positives (TP)  : 2
+  False Positives (FP) : 0
   False Negatives (FN) : 0
-  True Negatives (TN)  : 0
-  Precision            : 0.800 (80.0%)
+  True Negatives (TN)  : 1
+  Precision            : 1.000 (100.0%)
   Recall               : 1.000 (100.0%)
-  F1 Score             : 0.889 (88.9%)
+  F1 Score             : 1.000 (100.0%)
 
 Execution Performance:
-  Mean Analysis Time   : 0.381s per PCAP
-  Total Benchmark Time : 2.666s
+  Mean Analysis Time   : 1.093s per PCAP
+  Total Benchmark Time : 3.280s
 ============================================================
 ```
 
 ### 12.3 Automated Unit Test Suite
-The automated test harness comprises **111 unit tests** across 8 test suites passing at 100%:
+The automated test harness comprises **109 unit tests** across 8 test suites passing at 100%:
 - `test_protocol_identifier.py`: 13/13 passed
 - `test_starttls.py`: 10/10 passed
 - `test_tls_analyser.py`: 31/31 passed
@@ -560,7 +558,7 @@ The automated test harness comprises **111 unit tests** across 8 test suites pas
 - `test_anomaly.py`: 14/14 passed
 - `test_scoring.py`: 10/10 passed
 - `test_reporting.py`: 3/3 passed (including binary PDF generation)
-- `test_api.py`: 21/21 passed (including PCAP downloads, re-analysis, and `/docs` shape tests)
+- `test_api.py`: 19/19 passed (including PCAP downloads, re-analysis, and unified `/docs` shape tests)
 
 ---
 

@@ -19,13 +19,11 @@ venv/
 env/
 
 # Generated files
-demo_pcaps/_certs/
-online_pcaps/
 backend/anomaly/isolation_forest.pkl
 backend/anomaly/scaler.pkl
 reports/
 benchmark/benchmark_results.json
-
+.evidence/
 # Temp uploads
 /tmp/securemailscope*/
 
@@ -40,9 +38,6 @@ benchmark/benchmark_results.json
 .coverage
 htmlcov/
 .pytest_cache/
-
-# Evidence & benchmark logs
-evidence/benchmarks/*.txt
 
 # Secrets / keys (demo certs are OK but not private keys from production)
 *.pem

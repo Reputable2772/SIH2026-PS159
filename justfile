@@ -29,14 +29,6 @@ compose-up:
 compose-down:
     podman-compose down
 
-# ─── Data Generation ────────────────────────────────────────────────────────
-
-# Generate synthetic test PCAPs (requires tshark + openssl in PATH)
-gen-pcaps:
-    @echo "Generating synthetic test PCAPs..."
-    @echo "Note: requires tshark and openssl (available in nix devshell)"
-    {{PYTHON}} {{SCRIPTS_DIR}}/generate_pcaps.py
-
 # ─── Testing & Benchmarking ─────────────────────────────────────────────────
 
 # Run static analysis and lint checks
@@ -59,8 +51,8 @@ benchmark:
 
 # Run benchmark and save results
 benchmark-save:
-    @mkdir -p evidence/benchmarks
-    PYTHONPATH="." {{PYTHON}} benchmark/evaluate.py 2>&1 | tee evidence/benchmarks/benchmark_$(date +%Y%m%d_%H%M%S).txt
+    @mkdir -p .evidence
+    PYTHONPATH="." {{PYTHON}} benchmark/evaluate.py 2>&1 | tee .evidence/benchmark_$(date +%Y%m%d_%H%M%S).txt
 
 # ─── Demo ───────────────────────────────────────────────────────────────────
 
@@ -99,16 +91,11 @@ check:
     @{{PYTHON}} -c "import cryptography; print('  ✓ cryptography', cryptography.__version__)"
     @{{PYTHON}} -c "import dpkt; print('  ✓ dpkt available')"
     @echo ""
-    @echo "Environment OK. Run 'just gen-pcaps' to generate test data."
+    @echo "Environment OK. Sample PCAPs available in demo_pcaps/."
 
 # Clean generated files
 clean:
-    rm -rf demo_pcaps/_certs
     rm -rf backend/anomaly/isolation_forest.pkl backend/anomaly/scaler.pkl
-    rm -rf reports/
+    rm -rf reports/ .evidence/
     find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
     find . -name "*.pyc" -delete 2>/dev/null || true
-
-# Full clean including PCAPs
-clean-all: clean
-    rm -rf demo_pcaps/*.pcap
