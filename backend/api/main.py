@@ -13,12 +13,13 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
-from backend.models.session import AnalysisResult
+from backend.api.docs import API_SPEC_CATALOG, render_docs_html
+from backend.models.session import AnalysisResult, Finding, TCPSession
 from backend.pcap.pipeline import analyse_pcap
 from backend.reporting.generator import (
     generate_html_report,
@@ -47,6 +48,9 @@ app = FastAPI(
     title="SecureMailScope API",
     description="AI-Assisted Cryptographic Security Posture Assessment for Secure Email Communications",
     version="0.1.0",
+    docs_url=None,  # Custom documentation handler at /docs
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
     lifespan=lifespan,
 )
 
@@ -82,6 +86,107 @@ class AnalysisStatus(BaseModel):
     analysis_id: str
     status: str
     error: str | None = None
+
+
+class PcapEntry(BaseModel):
+    filename: str
+    title: str
+    description: str
+    category: str
+    size_bytes: int
+    sha256_hash: str
+    download_url: str
+    analyse_url: str
+
+
+class SessionSummaryItem(BaseModel):
+    session_id: str
+    protocol: str
+    src_ip: str
+    src_port: int
+    dst_ip: str
+    dst_port: int
+    risk_level: str | None = None
+
+
+class AnalysisSummaryItem(BaseModel):
+    analysis_id: str
+    status: str
+    pcap: str | None = None
+    risk_score: float | None = None
+    risk_level: str | None = None
+    analyzed_at: str | None = None
+    session_count: int = 0
+    finding_count: int = 0
+    packet_count: int = 0
+    critical_count: int = 0
+    high_count: int = 0
+    sessions: list[SessionSummaryItem] = []
+
+
+class HealthResponse(BaseModel):
+    status: str
+    version: str
+    tshark_available: bool
+    analyses_cached: int
+
+
+class DemoRunItem(BaseModel):
+    analysis_id: str
+    pcap: str
+
+
+class DemoRunResponse(BaseModel):
+    demo_analyses: list[DemoRunItem]
+
+
+# ---------------------------------------------------------------------------
+# Interactive & Machine-Readable Documentation Endpoint
+# ---------------------------------------------------------------------------
+
+
+@app.get("/docs", response_class=HTMLResponse)
+@app.get("/api/docs", response_class=HTMLResponse)
+@app.get("/docs.json", response_class=JSONResponse)
+@app.get("/api/docs.json", response_class=JSONResponse)
+async def api_docs(
+    request: Request,
+    format: str | None = None,
+):
+    """
+    Self-documenting API shape catalog & interactive reference.
+    Returns structured JSON shape specifications for API-consuming tools, agents,
+    and SDKs (?format=json or Accept: application/json), or interactive HTML
+    documentation for web browsers.
+    """
+    path = request.url.path.lower()
+    accept_header = request.headers.get("accept", "").lower()
+
+    # Determine whether caller wants JSON or HTML
+    wants_json = (
+        path.endswith(".json")
+        or format == "json"
+        or ("application/json" in accept_header and "text/html" not in accept_header)
+    )
+
+    if format == "openapi":
+        return JSONResponse(app.openapi())
+
+    if wants_json:
+        return JSONResponse(API_SPEC_CATALOG)
+
+    return HTMLResponse(render_docs_html(API_SPEC_CATALOG))
+
+
+@app.get("/swagger", include_in_schema=False)
+async def swagger_ui():
+    """Optional Swagger UI interface."""
+    from fastapi.openapi.docs import get_swagger_ui_html
+
+    return get_swagger_ui_html(
+        openapi_url=app.openapi_url or "/openapi.json",
+        title=f"{app.title} - Swagger UI",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -153,7 +258,7 @@ async def get_analysis_status(analysis_id: str):
     )
 
 
-@app.get("/api/analysis/{analysis_id}")
+@app.get("/api/analysis/{analysis_id}", response_model=AnalysisResult | AnalysisStatus)
 async def get_analysis(analysis_id: str):
     status = _analysis_status.get(analysis_id)
     if not status:
@@ -162,27 +267,27 @@ async def get_analysis(analysis_id: str):
                 status = st
                 break
     if status in ("pending", "running"):
-        return JSONResponse({"status": status, "analysis_id": analysis_id})
+        return AnalysisStatus(analysis_id=analysis_id, status=status)
     result = _get_result_or_404(analysis_id)
-    return result.model_dump(mode="json")
+    return result
 
 
-@app.get("/api/analysis/{analysis_id}/sessions")
+@app.get("/api/analysis/{analysis_id}/sessions", response_model=list[TCPSession])
 async def get_sessions(analysis_id: str):
     result = _get_result_or_404(analysis_id)
-    return [s.model_dump(mode="json") for s in result.sessions]
+    return result.sessions
 
 
-@app.get("/api/analysis/{analysis_id}/sessions/{session_id}")
+@app.get("/api/analysis/{analysis_id}/sessions/{session_id}", response_model=TCPSession)
 async def get_session(analysis_id: str, session_id: str):
     result = _get_result_or_404(analysis_id)
     for s in result.sessions:
         if s.session_id == session_id:
-            return s.model_dump(mode="json")
+            return s
     raise HTTPException(status_code=404, detail="Session not found")
 
 
-@app.get("/api/analysis/{analysis_id}/findings")
+@app.get("/api/analysis/{analysis_id}/findings", response_model=list[Finding])
 async def get_findings(
     analysis_id: str,
     severity: str | None = None,
@@ -204,7 +309,7 @@ async def get_findings(
             for f in findings
             if f.category.value.lower() == cat_lower or f.category.name.lower() == cat_lower
         ]
-    return [f.model_dump(mode="json") for f in findings]
+    return findings
 
 
 # ---------------------------------------------------------------------------
@@ -274,8 +379,8 @@ def _build_pcap_entry(p: Path) -> dict:
     }
 
 
-@app.get("/api/pcaps")
-@app.get("/api/demo/pcaps")
+@app.get("/api/pcaps", response_model=list[PcapEntry])
+@app.get("/api/demo/pcaps", response_model=list[PcapEntry])
 async def list_pcaps():
     """List available PCAP files with metadata, checksums, and analysis trigger URLs."""
     return [_build_pcap_entry(p) for p in _get_demo_pcaps()]
@@ -313,8 +418,8 @@ async def analyse_pcap_by_name(
     return AnalysisStatus(analysis_id=analysis_id, status="pending")
 
 
-@app.post("/api/pcaps/{filename}/analyse/sync")
-@app.post("/api/pcaps/{filename}/analyze/sync")
+@app.post("/api/pcaps/{filename}/analyse/sync", response_model=AnalysisResult)
+@app.post("/api/pcaps/{filename}/analyze/sync", response_model=AnalysisResult)
 async def analyse_pcap_by_name_sync(filename: str):
     """Trigger synchronous analysis of an available PCAP from scratch (returns complete result)."""
     pcap_path = DEMO_PCAPS_DIR / filename
@@ -328,14 +433,14 @@ async def analyse_pcap_by_name_sync(filename: str):
         result = await loop.run_in_executor(None, analyse_pcap, str(pcap_path), analysis_id)
         _analyses[analysis_id] = result
         _analysis_status[analysis_id] = "done"
-        return result.model_dump(mode="json")
+        return result
     except Exception as exc:
         _analysis_status[analysis_id] = "error"
         _analysis_errors[analysis_id] = str(exc)
         raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}") from exc
 
 
-@app.post("/api/demo/run")
+@app.post("/api/demo/run", response_model=DemoRunResponse)
 async def run_demo(background_tasks: BackgroundTasks = BackgroundTasks()):
     """Run analysis on all available demo PCAPs."""
     all_pcaps = _get_demo_pcaps()
@@ -349,9 +454,9 @@ async def run_demo(background_tasks: BackgroundTasks = BackgroundTasks()):
         aid = str(uuid.uuid4())
         _analysis_status[aid] = "pending"
         background_tasks.add_task(_run_analysis, aid, str(pcap))
-        demo_ids.append({"analysis_id": aid, "pcap": pcap.name})
+        demo_ids.append(DemoRunItem(analysis_id=aid, pcap=pcap.name))
 
-    return {"demo_analyses": demo_ids}
+    return DemoRunResponse(demo_analyses=demo_ids)
 
 
 # ---------------------------------------------------------------------------
@@ -365,10 +470,8 @@ async def report_json(analysis_id: str):
     return JSONResponse(generate_json_report(result))
 
 
-@app.get("/api/analysis/{analysis_id}/report/html")
+@app.get("/api/analysis/{analysis_id}/report/html", response_class=HTMLResponse)
 async def report_html(analysis_id: str):
-    from fastapi.responses import HTMLResponse
-
     result = _get_result_or_404(analysis_id)
     html = generate_html_report(result)
     return HTMLResponse(html)
@@ -387,54 +490,54 @@ async def report_pdf(analysis_id: str):
 
 
 # ---------------------------------------------------------------------------
-# Health
+# Health & Status
 # ---------------------------------------------------------------------------
 
 
-@app.get("/api/health")
+@app.get("/api/health", response_model=HealthResponse)
 async def health():
     import shutil
 
-    return {
-        "status": "ok",
-        "version": "0.1.0",
-        "tshark_available": shutil.which("tshark") is not None,
-        "analyses_cached": len(_analyses),
-    }
+    return HealthResponse(
+        status="ok",
+        version="0.1.0",
+        tshark_available=shutil.which("tshark") is not None,
+        analyses_cached=len(_analyses),
+    )
 
 
-@app.get("/api/analyses")
+@app.get("/api/analyses", response_model=list[AnalysisSummaryItem])
 async def list_analyses():
     return [
-        {
-            "analysis_id": aid,
-            "status": _analysis_status.get(aid, "unknown"),
-            "pcap": _analyses[aid].capture.pcap_filename if aid in _analyses else None,
-            "risk_score": _analyses[aid].risk_score.score if aid in _analyses else None,
-            "risk_level": _analyses[aid].risk_score.level if aid in _analyses else None,
-            "analyzed_at": _analyses[aid].capture.analyzed_at.isoformat()
+        AnalysisSummaryItem(
+            analysis_id=aid,
+            status=_analysis_status.get(aid, "unknown"),
+            pcap=_analyses[aid].capture.pcap_filename if aid in _analyses else None,
+            risk_score=_analyses[aid].risk_score.score if aid in _analyses else None,
+            risk_level=_analyses[aid].risk_score.level if aid in _analyses else None,
+            analyzed_at=_analyses[aid].capture.analyzed_at.isoformat()
             if aid in _analyses
             else None,
-            "session_count": len(_analyses[aid].sessions) if aid in _analyses else 0,
-            "finding_count": len(_analyses[aid].all_findings) if aid in _analyses else 0,
-            "packet_count": _analyses[aid].capture.packet_count if aid in _analyses else 0,
-            "critical_count": _analyses[aid].risk_score.critical_count if aid in _analyses else 0,
-            "high_count": _analyses[aid].risk_score.high_count if aid in _analyses else 0,
-            "sessions": [
-                {
-                    "session_id": s.session_id,
-                    "protocol": s.protocol,
-                    "src_ip": s.src_ip,
-                    "src_port": s.src_port,
-                    "dst_ip": s.dst_ip,
-                    "dst_port": s.dst_port,
-                    "risk_level": s.session_risk_level,
-                }
+            session_count=len(_analyses[aid].sessions) if aid in _analyses else 0,
+            finding_count=len(_analyses[aid].all_findings) if aid in _analyses else 0,
+            packet_count=_analyses[aid].capture.packet_count if aid in _analyses else 0,
+            critical_count=_analyses[aid].risk_score.critical_count if aid in _analyses else 0,
+            high_count=_analyses[aid].risk_score.high_count if aid in _analyses else 0,
+            sessions=[
+                SessionSummaryItem(
+                    session_id=s.session_id,
+                    protocol=str(s.protocol),
+                    src_ip=s.src_ip,
+                    src_port=s.src_port,
+                    dst_ip=s.dst_ip,
+                    dst_port=s.dst_port,
+                    risk_level=s.session_risk_level,
+                )
                 for s in _analyses[aid].sessions
             ]
             if aid in _analyses
             else [],
-        }
+        )
         for aid in _analysis_status
     ]
 
