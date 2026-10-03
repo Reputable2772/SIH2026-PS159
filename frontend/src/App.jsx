@@ -17,33 +17,52 @@ export default function App() {
   const [activeAnalysis, setActiveAnalysis] = useState(null)
   const { get } = useApi()
 
+  const fetchAnalyses = React.useCallback(async () => {
+    try {
+      const data = await get('/api/analyses')
+      if (Array.isArray(data)) {
+        setAnalyses(prev => {
+          // Compare content to prevent unnecessary re-render if data is unchanged
+          if (
+            prev.length === data.length &&
+            prev.every((p, i) => p.analysis_id === data[i].analysis_id && p.status === data[i].status)
+          ) {
+            return prev
+          }
+          return data
+        })
+
+        setActiveAnalysis(current => {
+          if (current && data.some(a => a.analysis_id === current)) return current
+          const downgrade = data.find(a => a.pcap?.includes('03_starttls_downgrade') && a.status === 'done')
+          if (downgrade) return downgrade.analysis_id
+          const done = data.find(a => a.status === 'done')
+          return done ? done.analysis_id : null
+        })
+      }
+    } catch {}
+  }, [])
+
   useEffect(() => {
-    let cancelled = false
-    const fetchAnalyses = async () => {
-      try {
-        const data = await get('/api/analyses')
-        if (cancelled) return
-        if (Array.isArray(data)) {
-          setAnalyses(data)
-          // Default active analysis if none selected yet (prioritize starttls fallback)
-          setActiveAnalysis(current => {
-            if (current) return current
-            const fallback = data.find(a => a.pcap?.includes('starttls_fallback') && a.status === 'done')
-            if (fallback) return fallback.analysis_id
-            const done = data.find(a => a.status === 'done')
-            return done ? done.analysis_id : null
-          })
-        }
-      } catch {}
+    fetchAnalyses()
+
+    // Smart polling: only poll while there are active tasks (pending or running)
+    let timer = null
+    const hasPending = analyses.some(a => a.status === 'pending' || a.status === 'running')
+    if (hasPending) {
+      timer = setInterval(fetchAnalyses, 2500)
     }
 
-    fetchAnalyses()
-    const timer = setInterval(fetchAnalyses, 4000)
+    const handleFocus = () => { fetchAnalyses() }
+    window.addEventListener('focus', handleFocus)
+    document.addEventListener('visibilitychange', handleFocus)
+
     return () => {
-      cancelled = true
-      clearInterval(timer)
+      if (timer) clearInterval(timer)
+      window.removeEventListener('focus', handleFocus)
+      document.removeEventListener('visibilitychange', handleFocus)
     }
-  }, [])
+  }, [analyses, fetchAnalyses])
 
   return (
     <ThemeProvider>
@@ -60,11 +79,16 @@ export default function App() {
                 analyses={analyses}
                 activeAnalysisId={activeAnalysis}
                 onSelectAnalysis={(id) => setActiveAnalysis(id)}
+                onRefreshAnalyses={fetchAnalyses}
               />
             }
           />
           <Route
             path="/analysis"
+            element={<AnalysisWorkspace analysisId={activeAnalysis} />}
+          />
+          <Route
+            path="/analysis/:id"
             element={<AnalysisWorkspace analysisId={activeAnalysis} />}
           />
           <Route
