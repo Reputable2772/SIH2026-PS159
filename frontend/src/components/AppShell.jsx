@@ -11,7 +11,10 @@ import {
   Plus,
   Home,
   ChevronRight,
-  Mail
+  Terminal,
+  Activity,
+  Layers,
+  ChevronDown
 } from 'lucide-react'
 import ThemeToggle from './ThemeToggle.jsx'
 
@@ -24,38 +27,27 @@ export default function AppShell({
   const navigate = useNavigate()
   const location = useLocation()
   const [searchQuery, setSearchQuery] = useState('')
+  const [showSettingsModal, setShowSettingsModal] = useState(false)
 
   const doneAnalyses = analyses.filter(a => a.status === 'done')
   const currentAnalysis = doneAnalyses.find(a => a.analysis_id === activeAnalysisId) || doneAnalyses[0]
-  const criticalCount = doneAnalyses.reduce((sum, a) => sum + (a.critical_count || (a.risk_level === 'CRITICAL' ? 1 : 0)), 0)
+  const criticalCount = doneAnalyses.reduce(
+    (sum, a) => sum + (a.critical_count || (a.risk_level === 'CRITICAL' ? 1 : 0)),
+    0
+  )
 
-  // Current analysis sessions
   const activeSessions = currentAnalysis?.sessions || []
 
-  // Helper to format date
-  const formatMetaDate = (isoStr, idx) => {
-    if (!isoStr) {
-      const dates = ['29 Oct 2026, 14:32', '29 Oct 2026, 13:15', '29 Oct 2026, 11:48', '28 Oct 2026, 16:03', '28 Oct 2026, 14:21']
-      return dates[idx % dates.length]
-    }
-    try {
-      const d = new Date(isoStr)
-      return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) +
-        ', ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-    } catch {
-      return '29 Oct 2026, 14:32'
-    }
-  }
-
   // Derive breadcrumbs from path
-  const pathParts = location.pathname.split('/').filter(Boolean)
-  let breadcrumbPcap = currentAnalysis?.pcap || '05_starttls_fallback.pcap'
+  let breadcrumbPcap = currentAnalysis?.pcap || '01_enterprise_secure_baseline.pcap'
   let breadcrumbSession = null
 
   if (location.pathname.startsWith('/sessions/')) {
     const rawSessionId = decodeURIComponent(location.pathname.replace('/sessions/', ''))
-    const sessIndex = activeSessions.findIndex(s => s.session_id === rawSessionId || s.session_id.endsWith(`:${rawSessionId}`))
-    breadcrumbSession = sessIndex >= 0 ? `Session ${sessIndex + 1}` : 'Session 1'
+    const sessIndex = activeSessions.findIndex(
+      s => s.session_id === rawSessionId || s.session_id.endsWith(`:${rawSessionId}`)
+    )
+    breadcrumbSession = sessIndex >= 0 ? `Session ${sessIndex + 1}` : (rawSessionId ? `Session ${rawSessionId}` : null)
   }
 
   const navItems = [
@@ -65,115 +57,53 @@ export default function AppShell({
       to: '/findings',
       icon: AlertTriangle,
       label: 'Findings',
-      badge: criticalCount > 0 ? criticalCount : 7
+      badge: criticalCount > 0 ? criticalCount : null
     },
-    { to: '/sessions', icon: Mail, label: 'Email Sessions' },
     { to: '/reports', icon: FileText, label: 'Reports' },
   ]
 
+  const riskClass = (currentAnalysis?.risk_level || 'minimal').toLowerCase()
+
   return (
     <div className="app-shell">
-      {/* Redesigned Sidebar Matching Screenshot */}
+      {/* Investigation-First Sidebar */}
       <nav className="sidebar-v2">
         {/* Brand Header */}
         <div className="sidebar-v2-header">
           <div className="brand-icon-shield">
-            <Mail size={18} />
+            <Shield size={18} />
           </div>
           <div>
             <div className="brand-v2-title">SecureMailScope</div>
-            <div className="brand-v2-subtitle">AI-Assisted Email Security Assessment</div>
+            <div className="brand-v2-subtitle">Forensic Email Security</div>
           </div>
         </div>
 
         {/* Sidebar Body */}
         <div className="sidebar-v2-body">
-          {/* Captures Section */}
-          <div>
-            <div className="sidebar-v2-section-head">
-              <span className="sidebar-v2-section-title">Captures</span>
-              <button
-                className="sidebar-upload-btn-pill"
-                onClick={() => navigate('/')}
-                title="Upload new PCAP capture"
-              >
-                <Plus size={11} /> Upload PCAP
-              </button>
-            </div>
-
-            <div className="captures-list-v2">
-              {doneAnalyses.slice(0, 5).map((a, idx) => {
-                const isActive = a.analysis_id === currentAnalysis?.analysis_id
-                const risk = a.risk_level?.toLowerCase() || 'medium'
-                const statusClass = risk === 'critical' ? 'critical' :
-                                    risk === 'low' ? 'low' :
-                                    risk === 'info' ? 'info' : 'medium'
-
-                return (
-                  <div
-                    key={a.analysis_id}
-                    className={`capture-item-v2 ${isActive ? 'active' : ''}`}
-                    onClick={() => {
-                      onSelectAnalysis(a.analysis_id)
-                      if (location.pathname === '/') {
-                        navigate('/analysis')
-                      }
-                    }}
-                  >
-                    <div className={`item-status-dot ${statusClass}`} />
-                    <div className="capture-item-content">
-                      <div className="capture-item-name">{a.pcap || `capture_${idx + 1}.pcap`}</div>
-                      <div className="capture-item-meta">{formatMetaDate(a.analyzed_at, idx)}</div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Sessions Section for Active Capture */}
-          {activeSessions.length > 0 && (
-            <div>
-              <div className="sidebar-v2-section-head">
-                <span className="sidebar-v2-section-title">
-                  Sessions ({activeSessions.length})
+          {/* Quick Active Case Indicator */}
+          {currentAnalysis && (
+            <div className="sidebar-active-case-box">
+              <div className="sidebar-active-case-head">
+                <span className="sidebar-active-case-tag">ACTIVE CASE</span>
+                <span className={`case-risk-pill ${riskClass}`}>
+                  {currentAnalysis.risk_level || 'MINIMAL'}
                 </span>
               </div>
-
-              <div className="sessions-list-v2">
-                {activeSessions.map((s, idx) => {
-                  const isCurrentSession = location.pathname.includes(encodeURIComponent(s.session_id)) || (location.pathname.includes('sessions') && idx === 0)
-                  const risk = s.risk_level?.toLowerCase() || (idx === 0 ? 'critical' : idx === 1 ? 'low' : 'medium')
-
-                  return (
-                    <div
-                      key={s.session_id || idx}
-                      className={`session-item-v2 ${isCurrentSession ? 'active' : ''}`}
-                      onClick={() => navigate(`/sessions/${encodeURIComponent(s.session_id)}`)}
-                    >
-                      <div className={`item-status-dot ${risk}`} />
-                      <div className="capture-item-content">
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.4rem' }}>
-                          <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text)' }}>
-                            Session {idx + 1}
-                          </span>
-                          <span className={`session-badge-pill ${risk}`}>
-                            {risk}
-                          </span>
-                        </div>
-                        <div className="capture-item-meta" style={{ fontFamily: 'monospace' }}>
-                          {s.protocol?.toUpperCase() || 'SMTP'} {s.src_ip} → {s.dst_ip}
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
+              <div className="sidebar-active-case-title" title={currentAnalysis.pcap}>
+                {currentAnalysis.pcap || 'capture.pcap'}
+              </div>
+              <div className="sidebar-active-case-meta">
+                <span>{activeSessions.length} streams</span>
+                <span>·</span>
+                <span>{currentAnalysis.finding_count ?? 0} findings</span>
               </div>
             </div>
           )}
 
-          {/* Navigation Links */}
-          <div className="sidebar-v2-nav-list">
+          {/* Core Persistent Navigation Links */}
+          <div className="sidebar-v2-nav-list" style={{ marginTop: '0.75rem' }}>
+            <div className="sidebar-nav-section-label">WORKSPACE</div>
             {navItems.map(({ to, icon: Icon, label, badge, exact }) => (
               <NavLink
                 key={to}
@@ -184,17 +114,7 @@ export default function AppShell({
                 <Icon size={16} />
                 <span>{label}</span>
                 {badge && (
-                  <span
-                    style={{
-                      marginLeft: 'auto',
-                      background: 'var(--critical)',
-                      color: '#fff',
-                      fontSize: '0.65rem',
-                      fontWeight: 700,
-                      padding: '0.1rem 0.4rem',
-                      borderRadius: 10
-                    }}
-                  >
+                  <span className="sidebar-nav-badge-pill">
                     {badge}
                   </span>
                 )}
@@ -205,10 +125,10 @@ export default function AppShell({
 
         {/* Sidebar Footer */}
         <div className="sidebar-v2-footer">
-          <button onClick={() => navigate('/guide')}>
+          <button onClick={() => navigate('/guide')} title="Investigation Guide & Reference">
             <BookOpen size={14} /> Documentation
           </button>
-          <button onClick={() => alert('SecureMailScope Forensic Engine · v0.1.0\nProblem Statement PS 26159')}>
+          <button onClick={() => setShowSettingsModal(true)} title="System Engine & Configuration">
             <Settings size={14} /> Settings
           </button>
         </div>
@@ -216,21 +136,25 @@ export default function AppShell({
 
       {/* Main Content Area */}
       <div className="main-wrapper">
-        {/* Authoritative Top Bar Matching Screenshot */}
+        {/* Top Bar with Contextual Breadcrumbs */}
         <header className="top-bar-v2">
           {/* Breadcrumbs */}
           <div className="breadcrumb-trail">
-            <NavLink to="/" title="Home">
-              <Home size={15} />
+            <NavLink to="/" title="Capture Library (Home)">
+              <Home size={14} />
             </NavLink>
             <ChevronRight size={13} className="breadcrumb-separator" />
-            <NavLink to="/analysis">Analyses</NavLink>
+            <NavLink to="/analysis" className={location.pathname === '/analysis' ? 'breadcrumb-active' : ''}>
+              Analyses
+            </NavLink>
             <ChevronRight size={13} className="breadcrumb-separator" />
-            <span className="breadcrumb-current">{breadcrumbPcap}</span>
+            <span className="breadcrumb-current" title={breadcrumbPcap}>
+              {breadcrumbPcap}
+            </span>
             {breadcrumbSession && (
               <>
                 <ChevronRight size={13} className="breadcrumb-separator" />
-                <span className="breadcrumb-current" style={{ color: 'var(--accent)' }}>
+                <span className="breadcrumb-current" style={{ color: 'var(--accent)', fontWeight: 600 }}>
                   {breadcrumbSession}
                 </span>
               </>
@@ -239,7 +163,7 @@ export default function AppShell({
 
           {/* Right Action Elements */}
           <div className="top-bar-v2-actions">
-            {/* Search Input with Ctrl K */}
+            {/* Search Input */}
             <div className="topbar-search-box">
               <Search size={14} color="var(--text-dim)" />
               <input
@@ -248,17 +172,32 @@ export default function AppShell({
                 className="topbar-search-input"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && searchQuery.trim()) {
+                    navigate(`/findings?q=${encodeURIComponent(searchQuery.trim())}`)
+                  }
+                }}
               />
-              <span className="kbd-shortcut">Ctrl K</span>
+              <span className="kbd-shortcut">↵ Enter</span>
             </div>
+
+            {/* Quick Upload Button */}
+            <button
+              className="btn btn-secondary topbar-btn-compact"
+              onClick={() => navigate('/')}
+              title="Open PCAP Capture Library & Upload"
+            >
+              <Plus size={13} /> Drop PCAP
+            </button>
 
             {/* Generate Report Button */}
             <button
               className="topbar-report-btn"
               onClick={() => navigate('/reports')}
+              title="Generate Executive Audit Report"
             >
               <FileText size={14} />
-              <span>Generate Report</span>
+              <span>Report</span>
             </button>
 
             {/* Dark Mode Theme Toggle */}
@@ -271,7 +210,57 @@ export default function AppShell({
           {children}
         </main>
       </div>
+
+      {/* Settings Modal */}
+      {showSettingsModal && (
+        <div className="modal-backdrop" onClick={() => setShowSettingsModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700, fontSize: '1rem', color: 'var(--text)' }}>
+                <Settings size={18} color="var(--accent)" />
+                Engine & Configuration
+              </div>
+              <button
+                className="panel-ctrl-btn"
+                onClick={() => setShowSettingsModal(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: '1.25rem' }}>
+              <div style={{ marginBottom: '0.5rem' }}>
+                <strong style={{ color: 'var(--text)' }}>SecureMailScope Forensic Engine</strong> · v0.1.0
+              </div>
+              <div>Smart India Hackathon 2026 · Problem Statement 26159</div>
+              <div>Architecture: Passive TShark / Scapy Dissector + Isolation Forest Anomaly Classifier</div>
+            </div>
+
+            <div className="card" style={{ padding: '0.85rem 1rem', background: 'var(--bg-card-subtle)', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', marginBottom: '0.4rem' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Capture Storage Mode</span>
+                <span style={{ fontFamily: 'monospace', color: 'var(--text)' }}>Zero-Payload (In-Memory / Temp)</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', marginBottom: '0.4rem' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Deterministic Rule Count</span>
+                <span style={{ fontFamily: 'monospace', color: 'var(--text)' }}>14 Security Rules Active</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Backend Pipeline Status</span>
+                <span style={{ color: 'var(--success)', fontWeight: 600 }}>ONLINE</span>
+              </div>
+            </div>
+
+            <button
+              className="btn btn-primary"
+              style={{ width: '100%' }}
+              onClick={() => setShowSettingsModal(false)}
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
-

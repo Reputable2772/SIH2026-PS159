@@ -164,7 +164,7 @@ export default function Guide() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: '0.75rem' }}>
-          <button className="btn btn-secondary" onClick={() => navigate('/upload')} style={{ fontSize: '0.82rem' }}>
+          <button className="btn btn-secondary" onClick={() => navigate('/')} style={{ fontSize: '0.82rem' }}>
             <Upload size={14} /> Upload PCAP
           </button>
           <button className="btn btn-primary" onClick={() => navigate('/')} style={{ fontSize: '0.82rem' }}>
