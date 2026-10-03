@@ -76,6 +76,7 @@ TSHARK_FIELDS = [
     "tls.handshake.ja3_full",
     # Certificate fields — only available for TLS < 1.3 (or if SSLKEYLOGFILE provided)
     "tls.handshake.certificates_length",
+    "x509af.serialNumber",
     "x509af.subjectPublicKeyInfo_element",
     "x509ce.dNSName",
     "x509sat.uTF8String",

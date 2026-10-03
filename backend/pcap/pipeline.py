@@ -36,6 +36,7 @@ from backend.models.session import (
 from backend.pcap.extractor import (
     compute_sha256,
     extract_certificates_from_pcap,
+    extract_field,
     get_pcap_metadata,
     get_tcp_streams,
 )
@@ -229,7 +230,26 @@ def _build_session(
             # Try to extract certificate DER via tshark export
             # (best-effort; may be empty if not decoded)
             cert_ders = extract_certificates_from_pcap(pcap_path)
-            for der in cert_ders.values():
+            stream_serials: set[str] = set()
+            for pkt in packets:
+                sn = extract_field(pkt, "x509af.serialNumber")
+                if sn:
+                    for s in str(sn).replace(":", "").replace(" ", "").split(","):
+                        s_clean = s.strip().lower().lstrip("0")
+                        if s_clean:
+                            stream_serials.add(s_clean)
+
+            for fname, der in cert_ders.items():
+                base_sn = (
+                    fname.lower()
+                    .replace(".cer", "")
+                    .replace(".crt", "")
+                    .split("(")[0]
+                    .strip()
+                    .lstrip("0")
+                )
+                if stream_serials and base_sn not in stream_serials:
+                    continue
                 cert_info = parse_certificate_der(der)
                 if cert_info:
                     tls_hs.certificates.append(cert_info)
