@@ -4,7 +4,6 @@
 set dotenv-load := false
 
 BACKEND_DIR := "backend"
-FRONTEND_DIR := "frontend"
 SCRIPTS_DIR := "scripts"
 PYTHON := "python"
 
@@ -19,16 +18,6 @@ backend:
     cd {{BACKEND_DIR}} && \
     PYTHONPATH="$(dirname $(pwd))" \
     uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
-
-# Start frontend dev server
-frontend:
-    cd {{FRONTEND_DIR}} && npm run dev
-
-# Start both backend and frontend (requires tmux or two terminals)
-dev:
-    @echo "Start backend:  just backend"
-    @echo "Start frontend: just frontend"
-    @echo "Or run both:    just backend & just frontend"
 
 # ─── Containerization (Podman) ───────────────────────────────────────────────
 
@@ -53,7 +42,6 @@ gen-pcaps:
 # Run static analysis and lint checks
 lint:
     ruff check .
-    cd {{FRONTEND_DIR}} && npm run build
 
 # Format python codebase
 format:
