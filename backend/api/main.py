@@ -32,7 +32,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from backend.api.docs import get_api_catalog, render_docs_html
 from backend.models.session import AnalysisResult, Finding, TCPSession
 from backend.pcap.pipeline import analyse_pcap
 from backend.reporting.generator import (
@@ -67,7 +66,7 @@ app = FastAPI(
     ),
     version="0.1.0",
     docs_url=None,  # Handled dynamically by our /docs endpoint
-    redoc_url="/redoc",
+    redoc_url=None,
     openapi_url="/openapi.json",
     lifespan=lifespan,
 )
@@ -306,77 +305,31 @@ class DemoRunResponse(BaseModel):
 
 @app.get(
     "/docs",
-    response_class=HTMLResponse,
-    tags=["System & Documentation"],
-    summary="Interactive API documentation & machine-readable shape catalog",
-)
-@app.get(
-    "/api/docs",
-    response_class=HTMLResponse,
-    tags=["System & Documentation"],
     include_in_schema=False,
-)
-@app.get(
-    "/docs.json",
-    response_class=JSONResponse,
-    tags=["System & Documentation"],
-    include_in_schema=False,
-)
-@app.get(
-    "/api/docs.json",
-    response_class=JSONResponse,
-    tags=["System & Documentation"],
-    include_in_schema=False,
+    summary="Unified API documentation & shape specification",
 )
 async def api_docs(
     request: Request,
     format: str | None = Query(
         default=None,
-        description="Optional format override: 'json' (shape spec catalog), 'html' (interactive UI), or 'openapi' (raw OpenAPI 3.1).",
+        description="Format override: 'json' (OpenAPI schema for tools) or 'html' (interactive UI).",
     ),
 ):
     """
-    Interactive & machine-readable documentation and shape reference endpoint.
+    Unified API documentation endpoint.
 
-    Dynamically inspected from FastAPI's live OpenAPI schema (derived from Python
-    docstrings, route metadata, and Pydantic models).
-
-    - **Browser GET**: Returns a self-contained, responsive dark-mode interactive HTML reference.
-    - **Accept: application/json** or **?format=json**: Returns structured JSON endpoint shapes and models for automated tools.
-    - **?format=openapi**: Returns the raw OpenAPI 3.1 schema.
+    - Returns OpenAPI JSON schema if format=json or Accept: application/json (for automated tools/agents).
+    - Returns interactive Swagger UI for web browsers.
     """
-    path = request.url.path.lower()
-    accept_header = request.headers.get("accept", "").lower()
-    openapi_schema = app.openapi()
+    accept = request.headers.get("accept", "").lower()
+    if format == "json" or ("application/json" in accept and "text/html" not in accept):
+        return JSONResponse(app.openapi())
 
-    wants_json = (
-        path.endswith(".json")
-        or format == "json"
-        or ("application/json" in accept_header and "text/html" not in accept_header)
-    )
-
-    if format == "openapi":
-        return JSONResponse(openapi_schema)
-
-    if wants_json:
-        return JSONResponse(get_api_catalog(openapi_schema))
-
-    return HTMLResponse(render_docs_html(openapi_schema))
-
-
-@app.get(
-    "/swagger",
-    tags=["System & Documentation"],
-    include_in_schema=False,
-    summary="Standard Swagger UI explorer",
-)
-async def swagger_ui():
-    """Optional Swagger UI interface querying /openapi.json."""
     from fastapi.openapi.docs import get_swagger_ui_html
 
     return get_swagger_ui_html(
         openapi_url=app.openapi_url or "/openapi.json",
-        title=f"{app.title} - Swagger UI",
+        title=f"{app.title} - Documentation",
     )
 
 

@@ -205,9 +205,7 @@ def test_docs_html_response(client):
     res = client.get("/docs", headers={"Accept": "text/html,application/xhtml+xml"})
     assert res.status_code == 200
     assert "text/html" in res.headers["content-type"]
-    assert "SecureMailScope API" in res.text
-    assert "Forensic API Reference" in res.text
-    assert "/api/pcaps" in res.text
+    assert "swagger-ui" in res.text or "Swagger UI" in res.text
 
 
 def test_docs_json_accept_header(client):
@@ -215,10 +213,10 @@ def test_docs_json_accept_header(client):
     assert res.status_code == 200
     assert "application/json" in res.headers["content-type"]
     data = res.json()
-    assert data["api"] == "SecureMailScope API"
-    assert "endpoints" in data
-    assert "models" in data
-    assert any(ep["path"] == "/api/pcaps" for ep in data["endpoints"])
+    assert "openapi" in data
+    assert "paths" in data
+    assert "/api/pcaps" in data["paths"]
+    assert "PcapEntry" in data["components"]["schemas"]
 
 
 def test_docs_json_query_param(client):
@@ -226,36 +224,15 @@ def test_docs_json_query_param(client):
     assert res.status_code == 200
     assert "application/json" in res.headers["content-type"]
     data = res.json()
-    assert "endpoints" in data
-    assert "models" in data
-    pcap_ep = next(ep for ep in data["endpoints"] if ep["path"] == "/api/pcaps")
-    assert pcap_ep["response"]["model"] == "list[PcapEntry]"
+    assert "openapi" in data
+    assert "/api/pcaps" in data["paths"]
 
 
-def test_docs_json_direct_path(client):
-    res = client.get("/docs.json")
+def test_openapi_endpoint(client):
+    res = client.get("/openapi.json")
     assert res.status_code == 200
     assert "application/json" in res.headers["content-type"]
     data = res.json()
-    assert data["version"] == "0.1.0"
-
-    res_api = client.get("/api/docs.json")
-    assert res_api.status_code == 200
-    assert res_api.json()["api"] == data["api"]
-
-
-def test_docs_openapi_format(client):
-    res = client.get("/docs?format=openapi")
-    assert res.status_code == 200
-    data = res.json()
-    assert "openapi" in data
     assert "paths" in data
-    # Verify our endpoints have rich schemas in OpenAPI paths
     assert "/api/pcaps" in data["paths"]
     assert "200" in data["paths"]["/api/pcaps"]["get"]["responses"]
-
-
-def test_swagger_endpoint(client):
-    res = client.get("/swagger")
-    assert res.status_code == 200
-    assert "text/html" in res.headers["content-type"]

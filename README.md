@@ -266,7 +266,7 @@ Do not use for compliance or regulatory purposes.
 ├── compose.yaml           — Podman/Docker Compose stack (podman-compose.yml is identical)
 ├── podman-compose.yml     — Alias of compose.yaml for podman-compose compatibility
 ├── backend/
-│   ├── api/               — FastAPI REST API & dynamic /docs engine
+│   ├── api/main.py        — FastAPI REST API (unified /docs & OpenAPI)
 │   ├── pcap/              — PCAP ingestion + pipeline
 │   ├── protocols/         — SMTP/IMAP/POP3 + STARTTLS state machine
 │   ├── tls/               — TLS handshake analyser
@@ -278,7 +278,7 @@ Do not use for compliance or regulatory purposes.
 ├── demo_pcaps/            — Synthetic test PCAPs
 ├── benchmark/             — Evaluation suite
 ├── scripts/               — PCAP generation + offline demo
-├── tests/                 — Automated unit tests (111 tests, 100% passing)
-├── docs/                  — Architecture + protocol docs
+├── tests/                 — Automated unit tests (109 tests, 100% passing)
+├── DPR.md                 — Detailed Project Report (comprehensive technical specification)
 └── evidence/              — Benchmark & evaluation artifacts
 ```

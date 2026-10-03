@@ -5,7 +5,7 @@
 > **Target Problem Statement:** Smart India Hackathon (SIH 2026) — Problem Statement 26159 (PS 26159)  
 > **System Classification:** Passive Network Forensic & Cryptographic Security Posture Framework  
 > **Architecture:** Headless Forensic Microservice & REST Engine (Zero Frontend Dependencies)  
-> **Automated Test Baseline:** 111 Pytest Unit Tests Passing (100% Coverage Across Core Engines)  
+> **Automated Test Baseline:** 109 Pytest Unit Tests Passing (100% Coverage Across Core Engines)  
 > **Audit & Release Date:** October 2026  
 > **Authors:** SecureMailScope Engineering Team  
 
@@ -459,26 +459,18 @@ The core engine is exposed as a modular, high-throughput REST API built on **Fas
 
 ```
 backend/api/
-├── docs.py             # Dynamic OpenAPI schema inspector, shape catalog, and interactive HTML renderer
-├── main.py             # FastAPI routing, lifespan, ingestion, PCAP management, and inline docstrings
+├── main.py             # FastAPI REST routing, lifespan, ingestion, inline docstrings, and /docs
 └── __init__.py         # Package initialization
 ```
 
-### 11.1 Complete REST Routing Table
+### 11.1 Lean REST Routing Table
 
 | HTTP Verb | Endpoint URI | Response Model | Description |
 |---|---|---|---|
-| `GET` | `/docs` | `HTMLResponse` \| `JSONResponse` | Self-documenting API shape catalog (`?format=json` or `text/html`) |
-| `GET` | `/api/docs` | `HTMLResponse` \| `JSONResponse` | Alias for documentation & shape catalog |
-| `GET` | `/docs.json` | `JSONResponse` | Direct machine-readable JSON shape specification |
-| `GET` | `/api/docs.json` | `JSONResponse` | Alias for direct JSON shape specification |
+| `GET` | `/docs` | `HTMLResponse` \| `JSONResponse` | Single unified documentation endpoint (Swagger UI for browsers, OpenAPI schema JSON for tools) |
 | `GET` | `/openapi.json` | `JSONResponse` | Standard OpenAPI 3.1.0 JSON schema with 28 components |
-| `GET` | `/swagger` | `HTMLResponse` | Optional Swagger UI explorer |
-| `GET` | `/redoc` | `HTMLResponse` | Standard ReDoc interactive API reference |
 | `GET` | `/api/pcaps` | `list[PcapEntry]` | List available demo & stored PCAPs with SHA-256 and URLs |
-| `GET` | `/api/demo/pcaps` | `list[PcapEntry]` | Alias for PCAP catalog listing |
 | `GET` | `/api/pcaps/{filename}` | `FileResponse (pcap)` | Download raw binary PCAP file for offline analysis |
-| `GET` | `/api/demo/pcaps/{filename}` | `FileResponse (pcap)` | Alias for raw PCAP binary download |
 | `POST` | `/api/pcaps/{filename}/analyse` | `AnalysisStatus` | Trigger background analysis of a stored PCAP from scratch |
 | `POST` | `/api/pcaps/{filename}/analyse/sync` | `AnalysisResult` | Trigger synchronous blocking analysis returning full result tree |
 | `POST` | `/api/analysis/upload` | `AnalysisStatus` | Multipart file upload (`.pcap`, `.pcapng`, `.cap`) |
@@ -495,23 +487,18 @@ backend/api/
 | `GET` | `/api/analysis/{id}/report/pdf` | `FileResponse (pdf)` | Download compiled ReportLab PDF executive forensic report |
 | `GET` | `/api/health` | `HealthResponse` | Operational check: version, tshark binary availability, cache count |
 
-### 11.2 Co-located Documentation Architecture & Live OpenAPI Introspection
-Rather than maintaining decoupled static documentation dictionaries that drift out of sync, SecureMailScope utilizes a **co-located, docstring-driven documentation model**:
+### 11.2 Lean Architecture: Co-located Documentation & Single Unified `/docs` Endpoint
+To keep the project as lean, maintainable, and unified as possible, all API documentation and data shapes are consolidated into a single source of truth:
 
-1. **Inline Route & Model Docstrings (JSDoc/TSDoc Paradigm):**
-   - Every route in `backend/api/main.py` is documented directly beside its handler using multi-line PEP 257 Python docstrings (defining functional behavior, security considerations, and RFC mappings).
-   - Route metadata (`tags`, `summary`, `response_model`, and `responses`) and parameter specifications (`FastPath`, `Query` with `description` and `examples`) live directly on the function signature.
-   - Pydantic models in `backend/models/session.py` and `backend/api/main.py` embed field-level descriptors via `Field(description=..., examples=...)`.
+1. **Inline Docstrings & Pydantic Schemas (Zero Redundancy):**
+   - All documentation is maintained directly beside the code in `backend/api/main.py`. Every route handler carries PEP 257 Python docstrings detailing functional behavior, security checks, and RFC mappings.
+   - Pydantic models define explicit field-level descriptions (`Field(description=..., examples=...)`) and strict type annotations.
+   - No separate or duplicate documentation generator files (`docs.py`) or duplicate Markdown files (`docs/architecture.md`) exist.
 
-2. **Dynamic OpenAPI Introspection Engine (`backend/api/docs.py`):**
-   - At runtime, `backend/api/docs.py` dynamically queries FastAPI's live schema (`app.openapi()`).
-   - `get_api_catalog(openapi_schema)` transforms this into a tool-friendly JSON shape contract without any duplicated static definitions.
-   - `render_docs_html(openapi_schema)` dynamically compiles the dark-mode HTML reference manual directly from live endpoint metadata.
-
-3. **Multi-Format Delivery:**
-   - **Machine-Readable Tools (`GET /docs?format=json`, `/docs.json`, or `Accept: application/json`):** Returns complete JSON endpoint catalogs with resolved schema shapes, parameter tables, and realistic payload examples for LLM agents, automated test scripts, and API consumers.
-   - **Interactive Browser Workspace (`GET /docs`):** Renders a responsive, zero-dependency dark-mode HTML workspace with live search filtering, copyable `curl` commands, and collapsible schema drawers.
-   - **Standard OpenAPI 3.1 & Swagger (`/openapi.json`, `/swagger`, `/redoc`):** Exposes 28 fully typed components and schemas for universal client SDK generation and Postman/Swagger import.
+2. **One Single Documentation Endpoint (`/docs`):**
+   - **For Automated Tools & Agents (`GET /docs?format=json` or `Accept: application/json`):** Returns the live OpenAPI 3.1 schema JSON directly, exposing all 28 schema components, field types, parameter descriptions, and response models.
+   - **For Human Operators & Browsers (`GET /docs`):** Automatically serves the interactive Swagger UI interface with interactive endpoint testing and `curl` generation.
+   - **Standard OpenAPI Specification (`GET /openapi.json`):** Serves the full OpenAPI 3.1 specification for universal client generation.
 
 ---
 
