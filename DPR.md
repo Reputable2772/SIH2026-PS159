@@ -459,8 +459,8 @@ The core engine is exposed as a modular, high-throughput REST API built on **Fas
 
 ```
 backend/api/
-├── docs.py             # Schema catalog dictionary, OpenAPI metadata, and HTML doc renderer
-├── main.py             # FastAPI routing, lifespan, ingestion, PCAP management, and response models
+├── docs.py             # Dynamic OpenAPI schema inspector, shape catalog, and interactive HTML renderer
+├── main.py             # FastAPI routing, lifespan, ingestion, PCAP management, and inline docstrings
 └── __init__.py         # Package initialization
 ```
 
@@ -495,14 +495,23 @@ backend/api/
 | `GET` | `/api/analysis/{id}/report/pdf` | `FileResponse (pdf)` | Download compiled ReportLab PDF executive forensic report |
 | `GET` | `/api/health` | `HealthResponse` | Operational check: version, tshark binary availability, cache count |
 
-### 11.2 The Interactive & Machine-Readable `/docs` Endpoint
-The `/docs` endpoint solves the shape discovery challenge for automated tools, AI agents, and developers:
-- **Machine-Readable Mode (`?format=json` or `Accept: application/json`):**
-  Returns a comprehensive API catalog detailing all 18 endpoints, path parameters, query parameters, request bodies, response models, property types, and concrete example payloads.
-- **Standalone HTML Mode (`Accept: text/html`):**
-  Renders a zero-dependency, dark-mode (`#080c14`), responsive reference manual with sidebar search filtering, parameter tables, collapsible shape previews, and 1-click copyable `curl` execution blocks.
-- **Strict OpenAPI 3.1.0 Integration (`/openapi.json`):**
-  Every endpoint declares an explicit Pydantic `response_model`, ensuring that standard OpenAPI tools (Postman, Swagger, Insomnia, SDK generators) receive complete JSON schemas for all response types.
+### 11.2 Co-located Documentation Architecture & Live OpenAPI Introspection
+Rather than maintaining decoupled static documentation dictionaries that drift out of sync, SecureMailScope utilizes a **co-located, docstring-driven documentation model**:
+
+1. **Inline Route & Model Docstrings (JSDoc/TSDoc Paradigm):**
+   - Every route in `backend/api/main.py` is documented directly beside its handler using multi-line PEP 257 Python docstrings (defining functional behavior, security considerations, and RFC mappings).
+   - Route metadata (`tags`, `summary`, `response_model`, and `responses`) and parameter specifications (`FastPath`, `Query` with `description` and `examples`) live directly on the function signature.
+   - Pydantic models in `backend/models/session.py` and `backend/api/main.py` embed field-level descriptors via `Field(description=..., examples=...)`.
+
+2. **Dynamic OpenAPI Introspection Engine (`backend/api/docs.py`):**
+   - At runtime, `backend/api/docs.py` dynamically queries FastAPI's live schema (`app.openapi()`).
+   - `get_api_catalog(openapi_schema)` transforms this into a tool-friendly JSON shape contract without any duplicated static definitions.
+   - `render_docs_html(openapi_schema)` dynamically compiles the dark-mode HTML reference manual directly from live endpoint metadata.
+
+3. **Multi-Format Delivery:**
+   - **Machine-Readable Tools (`GET /docs?format=json`, `/docs.json`, or `Accept: application/json`):** Returns complete JSON endpoint catalogs with resolved schema shapes, parameter tables, and realistic payload examples for LLM agents, automated test scripts, and API consumers.
+   - **Interactive Browser Workspace (`GET /docs`):** Renders a responsive, zero-dependency dark-mode HTML workspace with live search filtering, copyable `curl` commands, and collapsible schema drawers.
+   - **Standard OpenAPI 3.1 & Swagger (`/openapi.json`, `/swagger`, `/redoc`):** Exposes 28 fully typed components and schemas for universal client SDK generation and Postman/Swagger import.
 
 ---
 
