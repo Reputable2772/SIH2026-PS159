@@ -1,6 +1,7 @@
 """
-SecureMailScope — Interactive & Machine-Readable API Documentation Engine
-Generates detailed endpoint schemas, data shapes, and standalone HTML/JSON documentation.
+SecureMailScope — Dynamic OpenAPI Documentation Engine
+Dynamically generates interactive HTML documentation and tool-friendly JSON shape catalogs
+directly from FastAPI's live OpenAPI schema (derived from Python docstrings and Pydantic models).
 """
 
 from __future__ import annotations
@@ -8,1054 +9,209 @@ from __future__ import annotations
 import json
 from typing import Any
 
-# ---------------------------------------------------------------------------
-# Machine-Readable API Shape Catalog
-# ---------------------------------------------------------------------------
 
-API_SPEC_CATALOG: dict[str, Any] = {
-    "api": "SecureMailScope API",
-    "version": "0.1.0",
-    "title": "SecureMailScope — AI-Assisted Cryptographic Posture Assessment API",
-    "description": (
-        "Passive network forensic framework for email protocol analysis (SMTP, IMAP, POP3), "
-        "STARTTLS state machine tracking, X.509 certificate hygiene auditing, deterministic "
-        "cryptographic posture scoring, and 16-dimensional Isolation Forest ML anomaly detection."
-    ),
-    "base_url": "/",
-    "openapi_url": "/openapi.json",
-    "documentation_url": "/docs",
-    "endpoints": [
-        # --- PCAP Management & Triggers ---
-        {
-            "id": "list_pcaps",
-            "group": "PCAPs & Capture Management",
-            "method": "GET",
-            "path": "/api/pcaps",
-            "aliases": ["/api/demo/pcaps"],
-            "summary": "List available PCAPs with metadata and checksums",
-            "description": (
-                "Retrieves metadata, file sizes, SHA-256 digests, scenario categories, "
-                "and analysis URLs for all canonical benchmark PCAPs and stored capture files."
-            ),
-            "parameters": [],
-            "request_body": None,
-            "response": {
-                "status_code": 200,
-                "content_type": "application/json",
-                "model": "list[PcapEntry]",
-                "shape": [
-                    {
-                        "filename": "string (e.g. '01_enterprise_secure_baseline.pcap')",
-                        "title": "string (Scenario title)",
-                        "description": "string (Detailed scenario description)",
-                        "category": "string ('secure_baseline' | 'legacy_crypto' | 'downgrade_attack' | 'anomalies' | 'network_transports')",
-                        "size_bytes": "integer (File size in bytes)",
-                        "sha256_hash": "string (64-character lowercase hex SHA-256)",
-                        "download_url": "string (Path to download raw capture)",
-                        "analyse_url": "string (Path to trigger async analysis)",
-                    }
-                ],
-                "example": [
-                    {
-                        "filename": "01_enterprise_secure_baseline.pcap",
-                        "title": "Enterprise Secure Baseline",
-                        "description": "Modern TLS 1.3 / 1.2, ECDHE Forward Secrecy, valid certificates across SMTP, IMAP, and POP3.",
-                        "category": "secure_baseline",
-                        "size_bytes": 142850,
-                        "sha256_hash": "3d9f10a8b2c45e6f1a890b1234567890abcdef1234567890abcdef1234567890",
-                        "download_url": "/api/pcaps/01_enterprise_secure_baseline.pcap",
-                        "analyse_url": "/api/pcaps/01_enterprise_secure_baseline.pcap/analyse",
-                    }
-                ],
-            },
-            "curl_example": "curl -s http://localhost:8000/api/pcaps",
-        },
-        {
-            "id": "download_pcap",
-            "group": "PCAPs & Capture Management",
-            "method": "GET",
-            "path": "/api/pcaps/{filename}",
-            "aliases": ["/api/demo/pcaps/{filename}"],
-            "summary": "Download raw PCAP capture file",
-            "description": "Downloads the raw binary packet capture file (.pcap or .pcapng) for offline inspection in Wireshark or external forensic tooling.",
-            "parameters": [
-                {
-                    "name": "filename",
-                    "in": "path",
-                    "type": "string",
-                    "required": True,
-                    "description": "Name of the target PCAP file (e.g. '01_enterprise_secure_baseline.pcap').",
-                    "example": "01_enterprise_secure_baseline.pcap",
-                }
-            ],
-            "request_body": None,
-            "response": {
-                "status_code": 200,
-                "content_type": "application/vnd.tcpdump.pcap",
-                "model": "binary",
-                "shape": "Raw pcap binary octet stream",
-                "example": "<binary pcap bytes>",
-            },
-            "curl_example": "curl -O http://localhost:8000/api/pcaps/01_enterprise_secure_baseline.pcap",
-        },
-        {
-            "id": "analyse_pcap_by_name",
-            "group": "PCAPs & Capture Management",
-            "method": "POST",
-            "path": "/api/pcaps/{filename}/analyse",
-            "aliases": ["/api/pcaps/{filename}/analyze"],
-            "summary": "Trigger asynchronous PCAP analysis from scratch",
-            "description": (
-                "Dispatches a background forensic analysis job for an existing PCAP. "
-                "Returns immediately with a newly generated analysis_id and 'pending' status."
-            ),
-            "parameters": [
-                {
-                    "name": "filename",
-                    "in": "path",
-                    "type": "string",
-                    "required": True,
-                    "description": "Name of the PCAP file in the storage directory.",
-                    "example": "01_enterprise_secure_baseline.pcap",
-                }
-            ],
-            "request_body": None,
-            "response": {
-                "status_code": 200,
-                "content_type": "application/json",
-                "model": "AnalysisStatus",
-                "shape": {
-                    "analysis_id": "string (UUIDv4)",
-                    "status": "string ('pending' | 'running' | 'done' | 'error')",
-                    "error": "string | null",
-                },
-                "example": {
-                    "analysis_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-                    "status": "pending",
-                    "error": None,
-                },
-            },
-            "curl_example": "curl -X POST http://localhost:8000/api/pcaps/01_enterprise_secure_baseline.pcap/analyse",
-        },
-        {
-            "id": "analyse_pcap_by_name_sync",
-            "group": "PCAPs & Capture Management",
-            "method": "POST",
-            "path": "/api/pcaps/{filename}/analyse/sync",
-            "aliases": ["/api/pcaps/{filename}/analyze/sync"],
-            "summary": "Trigger synchronous PCAP analysis (blocking until complete)",
-            "description": (
-                "Executes the full forensic pipeline synchronously and blocks until completion. "
-                "Returns the complete AnalysisResult data tree."
-            ),
-            "parameters": [
-                {
-                    "name": "filename",
-                    "in": "path",
-                    "type": "string",
-                    "required": True,
-                    "description": "Name of the PCAP file to analyze synchronously.",
-                    "example": "01_enterprise_secure_baseline.pcap",
-                }
-            ],
-            "request_body": None,
-            "response": {
-                "status_code": 200,
-                "content_type": "application/json",
-                "model": "AnalysisResult",
-                "shape": "Complete AnalysisResult object (see Models section)",
-                "example": {
-                    "analysis_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-                    "capture": {
-                        "pcap_filename": "01_enterprise_secure_baseline.pcap",
-                        "sha256_hash": "3d9f10a8b2c45e6f1a890b1234567890abcdef1234567890abcdef1234567890",
-                        "packet_count": 86,
-                        "file_size_bytes": 142850,
-                    },
-                    "risk_score": {
-                        "score": 99.0,
-                        "level": "MINIMAL",
-                        "critical_count": 0,
-                        "high_count": 0,
-                        "medium_count": 0,
-                        "low_count": 0,
-                    },
-                    "sessions": [],
-                    "all_findings": [],
-                },
-            },
-            "curl_example": "curl -X POST http://localhost:8000/api/pcaps/01_enterprise_secure_baseline.pcap/analyse/sync",
-        },
-        # --- Analysis Ingestion ---
-        {
-            "id": "upload_and_analyse",
-            "group": "Analysis & Ingestion",
-            "method": "POST",
-            "path": "/api/analysis/upload",
-            "summary": "Upload and analyze PCAP capture file",
-            "description": "Upload a raw .pcap, .pcapng, or .cap file via multipart/form-data. Dispatches background processing and returns an analysis tracking ID.",
-            "parameters": [],
-            "request_body": {
-                "content_type": "multipart/form-data",
-                "fields": {
-                    "file": "binary (PCAP file content, .pcap / .pcapng / .cap)",
-                },
-            },
-            "response": {
-                "status_code": 200,
-                "content_type": "application/json",
-                "model": "AnalysisStatus",
-                "shape": {
-                    "analysis_id": "string (UUIDv4)",
-                    "status": "string ('pending' | 'running' | 'done' | 'error')",
-                    "error": "string | null",
-                },
-                "example": {
-                    "analysis_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-                    "status": "pending",
-                    "error": None,
-                },
-            },
-            "curl_example": "curl -F 'file=@sample.pcap' http://localhost:8000/api/analysis/upload",
-        },
-        {
-            "id": "analyse_file",
-            "group": "Analysis & Ingestion",
-            "method": "POST",
-            "path": "/api/analysis/file",
-            "summary": "Analyze PCAP by server-side file path",
-            "description": "Trigger analysis of a PCAP file by providing a local or relative filesystem path on the host.",
-            "parameters": [],
-            "request_body": {
-                "content_type": "application/json",
-                "shape": {
-                    "pcap_path": "string (Path to target PCAP file)",
-                },
-                "example": {"pcap_path": "demo_pcaps/01_enterprise_secure_baseline.pcap"},
-            },
-            "response": {
-                "status_code": 200,
-                "content_type": "application/json",
-                "model": "AnalysisStatus",
-                "shape": {
-                    "analysis_id": "string (UUIDv4)",
-                    "status": "string ('pending' | 'running' | 'done' | 'error')",
-                    "error": "string | null",
-                },
-                "example": {
-                    "analysis_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
-                    "status": "pending",
-                    "error": None,
-                },
-            },
-            "curl_example": 'curl -X POST http://localhost:8000/api/analysis/file -H "Content-Type: application/json" -d \'{"pcap_path": "demo_pcaps/01_enterprise_secure_baseline.pcap"}\'',
-        },
-        {
-            "id": "run_demo",
-            "group": "Analysis & Ingestion",
-            "method": "POST",
-            "path": "/api/demo/run",
-            "summary": "Run analysis across all canonical demo PCAPs",
-            "description": "Dispatches background analysis jobs for all canonical evaluation scenarios in demo_pcaps/.",
-            "parameters": [],
-            "request_body": None,
-            "response": {
-                "status_code": 200,
-                "content_type": "application/json",
-                "model": "DemoRunResponse",
-                "shape": {
-                    "demo_analyses": [
-                        {
-                            "analysis_id": "string (UUIDv4)",
-                            "pcap": "string (PCAP filename)",
-                        }
-                    ]
-                },
-                "example": {
-                    "demo_analyses": [
-                        {
-                            "analysis_id": "8fbc923a-...",
-                            "pcap": "01_enterprise_secure_baseline.pcap",
-                        },
-                        {
-                            "analysis_id": "9acd112b-...",
-                            "pcap": "02_legacy_cryptography_and_certs.pcap",
-                        },
-                    ]
-                },
-            },
-            "curl_example": "curl -X POST http://localhost:8000/api/demo/run",
-        },
-        # --- Analysis Results & Forensics ---
-        {
-            "id": "get_analysis_status",
-            "group": "Analysis & Forensics",
-            "method": "GET",
-            "path": "/api/analysis/{analysis_id}/status",
-            "summary": "Check analysis processing status",
-            "description": "Polls processing state ('pending', 'running', 'done', 'error') for an active or completed analysis.",
-            "parameters": [
-                {
-                    "name": "analysis_id",
-                    "in": "path",
-                    "type": "string",
-                    "required": True,
-                    "description": "UUID of the analysis.",
-                    "example": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-                }
-            ],
-            "request_body": None,
-            "response": {
-                "status_code": 200,
-                "content_type": "application/json",
-                "model": "AnalysisStatus",
-                "shape": {
-                    "analysis_id": "string",
-                    "status": "string ('pending' | 'running' | 'done' | 'error')",
-                    "error": "string | null",
-                },
-                "example": {
-                    "analysis_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-                    "status": "done",
-                    "error": None,
-                },
-            },
-            "curl_example": "curl -s http://localhost:8000/api/analysis/f47ac10b-58cc-4372-a567-0e02b2c3d479/status",
-        },
-        {
-            "id": "get_analysis",
-            "group": "Analysis & Forensics",
-            "method": "GET",
-            "path": "/api/analysis/{analysis_id}",
-            "summary": "Retrieve complete analysis result",
-            "description": "Returns the complete forensic analysis data tree including capture metadata, reconstructed sessions, risk score, protocol summary, all findings, and recommendations.",
-            "parameters": [
-                {
-                    "name": "analysis_id",
-                    "in": "path",
-                    "type": "string",
-                    "required": True,
-                    "description": "UUID of the analysis (prefix match supported).",
-                    "example": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-                }
-            ],
-            "request_body": None,
-            "response": {
-                "status_code": 200,
-                "content_type": "application/json",
-                "model": "AnalysisResult | AnalysisStatus",
-                "shape": {
-                    "analysis_id": "string",
-                    "capture": {
-                        "pcap_filename": "string",
-                        "sha256_hash": "string",
-                        "packet_count": "integer",
-                        "file_size_bytes": "integer",
-                        "duration_seconds": "float",
-                        "analyzed_at": "string (ISO 8601 UTC)",
-                    },
-                    "risk_score": {
-                        "score": "float (0.0 to 100.0)",
-                        "level": "string ('MINIMAL' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL')",
-                        "rationale": "list[string]",
-                        "critical_count": "integer",
-                        "high_count": "integer",
-                        "medium_count": "integer",
-                        "low_count": "integer",
-                        "ml_anomaly_count": "integer",
-                    },
-                    "protocol_summary": {
-                        "smtp_sessions": "integer",
-                        "imap_sessions": "integer",
-                        "pop3_sessions": "integer",
-                        "tls_sessions": "integer",
-                        "plaintext_sessions": "integer",
-                        "tls_versions": "dict[string, integer]",
-                        "cipher_suites": "dict[string, integer]",
-                        "forward_secrecy_yes": "integer",
-                        "forward_secrecy_no": "integer",
-                    },
-                    "sessions": "list[TCPSession]",
-                    "all_findings": "list[Finding]",
-                    "recommendations": "list[string]",
-                    "limitations": "list[string]",
-                    "processing_time_seconds": "float",
-                },
-                "example": {
-                    "analysis_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-                    "risk_score": {
-                        "score": 99.0,
-                        "level": "MINIMAL",
-                        "critical_count": 0,
-                        "high_count": 0,
-                    },
-                    "recommendations": ["Enforce TLS 1.3 across all mail endpoints."],
-                },
-            },
-            "curl_example": "curl -s http://localhost:8000/api/analysis/f47ac10b-58cc-4372-a567-0e02b2c3d479",
-        },
-        {
-            "id": "get_sessions",
-            "group": "Analysis & Forensics",
-            "method": "GET",
-            "path": "/api/analysis/{analysis_id}/sessions",
-            "summary": "Get reconstructed TCP sessions",
-            "description": "Returns list of all reconstructed TCP email conversations in the capture with 5-tuples, STARTTLS state machine status, TLS handshakes, X.509 certs, and ML anomaly features.",
-            "parameters": [
-                {
-                    "name": "analysis_id",
-                    "in": "path",
-                    "type": "string",
-                    "required": True,
-                    "description": "UUID of the analysis.",
-                    "example": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-                }
-            ],
-            "request_body": None,
-            "response": {
-                "status_code": 200,
-                "content_type": "application/json",
-                "model": "list[TCPSession]",
-                "shape": [
-                    {
-                        "session_id": "string",
-                        "src_ip": "string",
-                        "src_port": "integer",
-                        "dst_ip": "string",
-                        "dst_port": "integer",
-                        "protocol": "string ('SMTP' | 'IMAP' | 'POP3' | 'UNKNOWN')",
-                        "starttls_state": "string ('no_tls' | 'advertised' | 'requested' | 'negotiated' | 'failed' | 'suspicious_fallback' | 'direct_tls')",
-                        "cleartext_auth_detected": "boolean",
-                        "tls_handshake": "TLSHandshake | null",
-                        "findings": "list[Finding]",
-                        "is_anomalous": "boolean | null",
-                        "anomaly_score": "float | null",
-                        "session_risk_score": "float | null",
-                        "session_risk_level": "string | null",
-                    }
-                ],
-                "example": [
-                    {
-                        "session_id": "stream-0",
-                        "src_ip": "192.168.1.100",
-                        "src_port": 49210,
-                        "dst_ip": "192.168.1.25",
-                        "dst_port": 587,
-                        "protocol": "SMTP",
-                        "starttls_state": "negotiated",
-                        "session_risk_score": 100.0,
-                        "session_risk_level": "MINIMAL",
-                    }
-                ],
-            },
-            "curl_example": "curl -s http://localhost:8000/api/analysis/f47ac10b-58cc-4372-a567-0e02b2c3d479/sessions",
-        },
-        {
-            "id": "get_session_by_id",
-            "group": "Analysis & Forensics",
-            "method": "GET",
-            "path": "/api/analysis/{analysis_id}/sessions/{session_id}",
-            "summary": "Get specific reconstructed TCP session",
-            "description": "Returns full granular forensic parameters, raw banners, packet timestamps, and TLS extension decodes for a single TCP stream.",
-            "parameters": [
-                {
-                    "name": "analysis_id",
-                    "in": "path",
-                    "type": "string",
-                    "required": True,
-                    "description": "UUID of the analysis.",
-                    "example": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-                },
-                {
-                    "name": "session_id",
-                    "in": "path",
-                    "type": "string",
-                    "required": True,
-                    "description": "Identifier of the TCP session (e.g. 'stream-0').",
-                    "example": "stream-0",
-                },
-            ],
-            "request_body": None,
-            "response": {
-                "status_code": 200,
-                "content_type": "application/json",
-                "model": "TCPSession",
-                "shape": "TCPSession object (see Models section)",
-                "example": {
-                    "session_id": "stream-0",
-                    "src_ip": "192.168.1.100",
-                    "src_port": 49210,
-                    "dst_ip": "192.168.1.25",
-                    "dst_port": 587,
-                    "protocol": "SMTP",
-                    "starttls_state": "negotiated",
-                },
-            },
-            "curl_example": "curl -s http://localhost:8000/api/analysis/f47ac10b-58cc-4372-a567-0e02b2c3d479/sessions/stream-0",
-        },
-        {
-            "id": "get_findings",
-            "group": "Analysis & Forensics",
-            "method": "GET",
-            "path": "/api/analysis/{analysis_id}/findings",
-            "summary": "Query forensic security findings with filters",
-            "description": "Returns security findings across all sessions in the capture. Supports filtering by severity (CRITICAL, HIGH, MEDIUM, LOW) and category.",
-            "parameters": [
-                {
-                    "name": "analysis_id",
-                    "in": "path",
-                    "type": "string",
-                    "required": True,
-                    "description": "UUID of the analysis.",
-                    "example": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-                },
-                {
-                    "name": "severity",
-                    "in": "query",
-                    "type": "string | null",
-                    "required": False,
-                    "description": "Filter by severity: 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'.",
-                    "example": "CRITICAL",
-                },
-                {
-                    "name": "category",
-                    "in": "query",
-                    "type": "string | null",
-                    "required": False,
-                    "description": "Filter by category: 'deprecated_tls', 'weak_cipher', 'weak_key', 'expired_certificate', 'starttls_anomaly', 'plaintext_auth', 'ml_anomaly'.",
-                    "example": "starttls_anomaly",
-                },
-            ],
-            "request_body": None,
-            "response": {
-                "status_code": 200,
-                "content_type": "application/json",
-                "model": "list[Finding]",
-                "shape": [
-                    {
-                        "id": "string",
-                        "severity": "string ('critical' | 'high' | 'medium' | 'low' | 'info')",
-                        "category": "string",
-                        "title": "string",
-                        "description": "string",
-                        "evidence": {
-                            "session_id": "string",
-                            "packet_numbers": "list[integer]",
-                            "field": "string | null",
-                            "observed_value": "any | null",
-                            "extra": "dict[string, any]",
-                        },
-                        "recommendation": "string",
-                        "cve_references": "list[string]",
-                        "is_ml_finding": "boolean",
-                    }
-                ],
-                "example": [
-                    {
-                        "id": "f-starttls-downgrade-stream-0",
-                        "severity": "critical",
-                        "category": "starttls_anomaly",
-                        "title": "STARTTLS Downgrade / Stripping Detected",
-                        "description": "STARTTLS was advertised by server, but session reverted to unencrypted cleartext SMTP commands without TLS.",
-                        "evidence": {
-                            "session_id": "stream-0",
-                            "packet_numbers": [4, 6],
-                            "field": "smtp.req.command",
-                            "observed_value": "AUTH PLAIN",
-                        },
-                        "recommendation": "Enforce mandatory TLS (Reject plaintext fallback; implement MTA-STS / DANE).",
-                        "cve_references": ["RFC 3207", "CVE-2014-3566"],
-                        "is_ml_finding": False,
-                    }
-                ],
-            },
-            "curl_example": "curl -s 'http://localhost:8000/api/analysis/f47ac10b-58cc-4372-a567-0e02b2c3d479/findings?severity=CRITICAL'",
-        },
-        {
-            "id": "list_analyses",
-            "group": "Analysis & Forensics",
-            "method": "GET",
-            "path": "/api/analyses",
-            "summary": "List all active and cached analyses with summary metrics",
-            "description": "Returns overview summary of all analysis runs stored in memory, including risk scores, posture levels, stream counts, and finding counts.",
-            "parameters": [],
-            "request_body": None,
-            "response": {
-                "status_code": 200,
-                "content_type": "application/json",
-                "model": "list[AnalysisSummaryItem]",
-                "shape": [
-                    {
-                        "analysis_id": "string",
-                        "status": "string ('pending' | 'running' | 'done' | 'error')",
-                        "pcap": "string | null",
-                        "risk_score": "float | null",
-                        "risk_level": "string | null",
-                        "analyzed_at": "string (ISO 8601) | null",
-                        "session_count": "integer",
-                        "finding_count": "integer",
-                        "packet_count": "integer",
-                        "critical_count": "integer",
-                        "high_count": "integer",
-                        "sessions": "list[SessionSummaryItem]",
-                    }
-                ],
-                "example": [
-                    {
-                        "analysis_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-                        "status": "done",
-                        "pcap": "01_enterprise_secure_baseline.pcap",
-                        "risk_score": 99.0,
-                        "risk_level": "MINIMAL",
-                        "session_count": 3,
-                        "finding_count": 0,
-                    }
-                ],
-            },
-            "curl_example": "curl -s http://localhost:8000/api/analyses",
-        },
-        # --- Reporting ---
-        {
-            "id": "report_json",
-            "group": "Forensic Reports",
-            "method": "GET",
-            "path": "/api/analysis/{analysis_id}/report/json",
-            "summary": "Download machine-readable JSON forensic report",
-            "description": "Returns standardized JSON report artifact with analysis metadata, methodology disclaimers, and prioritized remediation directives.",
-            "parameters": [
-                {
-                    "name": "analysis_id",
-                    "in": "path",
-                    "type": "string",
-                    "required": True,
-                    "description": "UUID of the analysis.",
-                    "example": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-                }
-            ],
-            "request_body": None,
-            "response": {
-                "status_code": 200,
-                "content_type": "application/json",
-                "model": "dict[string, any]",
-                "shape": "Comprehensive JSON report with report_metadata, capture, sessions, findings, and score",
-                "example": {
-                    "report_metadata": {
-                        "tool": "SecureMailScope",
-                        "version": "0.1.0",
-                        "disclaimer": "SecureMailScope Composite Risk Score is a prototype scoring methodology...",
-                    },
-                    "analysis_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-                },
-            },
-            "curl_example": "curl -s http://localhost:8000/api/analysis/f47ac10b-58cc-4372-a567-0e02b2c3d479/report/json",
-        },
-        {
-            "id": "report_html",
-            "group": "Forensic Reports",
-            "method": "GET",
-            "path": "/api/analysis/{analysis_id}/report/html",
-            "summary": "Render standalone dark-mode HTML forensic dashboard",
-            "description": "Generates a completely self-contained, publication-ready HTML dashboard report requiring zero external CDN dependencies.",
-            "parameters": [
-                {
-                    "name": "analysis_id",
-                    "in": "path",
-                    "type": "string",
-                    "required": True,
-                    "description": "UUID of the analysis.",
-                    "example": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-                }
-            ],
-            "request_body": None,
-            "response": {
-                "status_code": 200,
-                "content_type": "text/html",
-                "model": "html",
-                "shape": "HTML5 document string",
-                "example": "<!DOCTYPE html><html>...</html>",
-            },
-            "curl_example": "curl -s http://localhost:8000/api/analysis/f47ac10b-58cc-4372-a567-0e02b2c3d479/report/html > report.html",
-        },
-        {
-            "id": "report_pdf",
-            "group": "Forensic Reports",
-            "method": "GET",
-            "path": "/api/analysis/{analysis_id}/report/pdf",
-            "summary": "Download compiled PDF executive forensic report",
-            "description": "Streams binary PDF executive report compiled on the fly using Python ReportLab with tables, risk charts, and finding breakdowns.",
-            "parameters": [
-                {
-                    "name": "analysis_id",
-                    "in": "path",
-                    "type": "string",
-                    "required": True,
-                    "description": "UUID of the analysis.",
-                    "example": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-                }
-            ],
-            "request_body": None,
-            "response": {
-                "status_code": 200,
-                "content_type": "application/pdf",
-                "model": "binary",
-                "shape": "Binary PDF document stream",
-                "example": "%PDF-1.4 ...",
-            },
-            "curl_example": "curl -s http://localhost:8000/api/analysis/f47ac10b-58cc-4372-a567-0e02b2c3d479/report/pdf -o report.pdf",
-        },
-        # --- System & Docs ---
-        {
-            "id": "health",
-            "group": "System & Health",
-            "method": "GET",
-            "path": "/api/health",
-            "summary": "System operational health check",
-            "description": "Verifies API responsiveness, software version, TShark binary availability in system PATH, and cached analysis count.",
-            "parameters": [],
-            "request_body": None,
-            "response": {
-                "status_code": 200,
-                "content_type": "application/json",
-                "model": "HealthResponse",
-                "shape": {
-                    "status": "string ('ok')",
-                    "version": "string (e.g. '0.1.0')",
-                    "tshark_available": "boolean",
-                    "analyses_cached": "integer",
-                },
-                "example": {
-                    "status": "ok",
-                    "version": "0.1.0",
-                    "tshark_available": True,
-                    "analyses_cached": 1,
-                },
-            },
-            "curl_example": "curl -s http://localhost:8000/api/health",
-        },
-        {
-            "id": "docs",
-            "group": "System & Health",
-            "method": "GET",
-            "path": "/docs",
-            "aliases": ["/api/docs", "/docs.json", "/api/docs.json"],
-            "summary": "Interactive & machine-readable documentation & shape catalog",
-            "description": (
-                "Self-documenting schema endpoint. Returns rich structured JSON shape specifications "
-                "for automated tools, coding agents, and SDK generators (?format=json or Accept: application/json), "
-                "or interactive dark-mode HTML documentation for web browsers."
-            ),
-            "parameters": [
-                {
-                    "name": "format",
-                    "in": "query",
-                    "type": "string | null",
-                    "required": False,
-                    "description": "Explicit format override: 'json' (machine shape spec), 'html' (interactive UI), or 'openapi' (raw OpenAPI 3.1 JSON).",
-                    "example": "json",
-                }
-            ],
-            "request_body": None,
-            "response": {
-                "status_code": 200,
-                "content_type": "application/json | text/html",
-                "model": "ApiDocsCatalog | HTMLResponse",
-                "shape": "Complete API catalog with parameter schemas, shapes, models, and examples",
-                "example": {
-                    "api": "SecureMailScope API",
-                    "version": "0.1.0",
-                    "endpoints": "list[EndpointSpec]",
-                    "models": "dict[string, ModelSpec]",
-                },
-            },
-            "curl_example": "curl -s http://localhost:8000/docs?format=json",
-        },
-    ],
-    "models": {
-        "PcapEntry": {
-            "type": "object",
-            "description": "Metadata descriptor for an available packet capture file.",
-            "properties": {
-                "filename": {"type": "string", "description": "Basename of PCAP file"},
-                "title": {"type": "string", "description": "Human-readable scenario title"},
-                "description": {
-                    "type": "string",
-                    "description": "Forensic description of scenario",
-                },
-                "category": {
-                    "type": "string",
-                    "description": "Scenario category classification",
-                },
-                "size_bytes": {"type": "integer", "description": "Size in bytes"},
-                "sha256_hash": {
-                    "type": "string",
-                    "description": "SHA-256 cryptographic file checksum",
-                },
-                "download_url": {"type": "string", "description": "Endpoint to download raw file"},
-                "analyse_url": {
-                    "type": "string",
-                    "description": "Endpoint to trigger async analysis",
-                },
-            },
-            "required": [
-                "filename",
-                "title",
-                "description",
-                "category",
-                "size_bytes",
-                "sha256_hash",
-                "download_url",
-                "analyse_url",
-            ],
-        },
-        "AnalysisStatus": {
-            "type": "object",
-            "description": "Status descriptor for an asynchronous PCAP analysis job.",
-            "properties": {
-                "analysis_id": {"type": "string", "description": "Unique UUIDv4 identifier"},
-                "status": {
-                    "type": "string",
-                    "enum": ["pending", "running", "done", "error"],
-                    "description": "Current processing state",
-                },
-                "error": {
-                    "type": "string | null",
-                    "description": "Error details if processing failed",
-                },
-            },
-            "required": ["analysis_id", "status"],
-        },
-        "AnalysisSummaryItem": {
-            "type": "object",
-            "description": "Summary metrics for a cached analysis run.",
-            "properties": {
-                "analysis_id": {"type": "string"},
-                "status": {"type": "string"},
-                "pcap": {"type": "string | null"},
-                "risk_score": {"type": "number | null"},
-                "risk_level": {"type": "string | null"},
-                "analyzed_at": {"type": "string | null"},
-                "session_count": {"type": "integer"},
-                "finding_count": {"type": "integer"},
-                "packet_count": {"type": "integer"},
-                "critical_count": {"type": "integer"},
-                "high_count": {"type": "integer"},
-                "sessions": {"type": "array", "items": {"$ref": "#/models/SessionSummaryItem"}},
-            },
-        },
-        "SessionSummaryItem": {
-            "type": "object",
-            "description": "Brief 5-tuple summary for an active TCP session.",
-            "properties": {
-                "session_id": {"type": "string"},
-                "protocol": {"type": "string"},
-                "src_ip": {"type": "string"},
-                "src_port": {"type": "integer"},
-                "dst_ip": {"type": "string"},
-                "dst_port": {"type": "integer"},
-                "risk_level": {"type": "string | null"},
-            },
-        },
-        "HealthResponse": {
-            "type": "object",
-            "description": "System operational status response.",
-            "properties": {
-                "status": {"type": "string", "example": "ok"},
-                "version": {"type": "string", "example": "0.1.0"},
-                "tshark_available": {"type": "boolean", "example": True},
-                "analyses_cached": {"type": "integer", "example": 0},
-            },
-            "required": ["status", "version", "tshark_available", "analyses_cached"],
-        },
-        "DemoRunResponse": {
-            "type": "object",
-            "description": "Response when launching canonical benchmark demo analyses.",
-            "properties": {
-                "demo_analyses": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "analysis_id": {"type": "string"},
-                            "pcap": {"type": "string"},
-                        },
-                    },
-                }
-            },
-        },
-        "AnalysisResult": {
-            "type": "object",
-            "description": "Top-level forensic analysis result containing all session data, findings, and posture score.",
-            "properties": {
-                "analysis_id": {"type": "string", "description": "Unique analysis run ID"},
-                "capture": {"$ref": "#/models/CaptureMetadata"},
-                "sessions": {"type": "array", "items": {"$ref": "#/models/TCPSession"}},
-                "risk_score": {"$ref": "#/models/RiskScore"},
-                "protocol_summary": {"$ref": "#/models/ProtocolSummary"},
-                "all_findings": {"type": "array", "items": {"$ref": "#/models/Finding"}},
-                "recommendations": {"type": "array", "items": {"type": "string"}},
-                "limitations": {"type": "array", "items": {"type": "string"}},
-                "processing_time_seconds": {"type": "number"},
-            },
-        },
-        "TCPSession": {
-            "type": "object",
-            "description": "Reconstructed TCP conversation flow with protocol state and TLS telemetry.",
-            "properties": {
-                "session_id": {"type": "string", "description": "Unique stream identifier"},
-                "src_ip": {"type": "string"},
-                "src_port": {"type": "integer"},
-                "dst_ip": {"type": "string"},
-                "dst_port": {"type": "integer"},
-                "protocol": {"type": "string", "enum": ["SMTP", "IMAP", "POP3", "UNKNOWN"]},
-                "starttls_state": {
-                    "type": "string",
-                    "enum": [
-                        "no_tls",
-                        "advertised",
-                        "requested",
-                        "negotiated",
-                        "failed",
-                        "suspicious_fallback",
-                        "direct_tls",
-                    ],
-                },
-                "cleartext_auth_detected": {"type": "boolean"},
-                "protocol_banners": {"type": "array", "items": {"type": "string"}},
-                "tls_handshake": {"$ref": "#/models/TLSHandshake"},
-                "findings": {"type": "array", "items": {"$ref": "#/models/Finding"}},
-                "is_anomalous": {"type": "boolean | null"},
-                "anomaly_score": {"type": "number | null"},
-                "session_risk_score": {"type": "number | null"},
-                "session_risk_level": {"type": "string | null"},
-            },
-        },
-        "TLSHandshake": {
-            "type": "object",
-            "description": "Dissected TLS handshake parameters.",
-            "properties": {
-                "tls_version": {
-                    "type": "string",
-                    "enum": [
-                        "SSL 2.0",
-                        "SSL 3.0",
-                        "TLS 1.0",
-                        "TLS 1.1",
-                        "TLS 1.2",
-                        "TLS 1.3",
-                        "Unknown",
-                    ],
-                },
-                "cipher_suite": {"type": "string | null"},
-                "cipher_suite_hex": {"type": "string | null"},
-                "key_exchange": {"type": "string | null"},
-                "forward_secrecy": {"type": "string", "enum": ["yes", "no", "unknown"]},
-                "client_offered_ciphers": {"type": "array", "items": {"type": "string"}},
-                "client_tls_extensions": {"type": "array", "items": {"type": "string"}},
-                "certificates": {"type": "array", "items": {"$ref": "#/models/CertificateInfo"}},
-                "cert_observability": {
-                    "type": "string",
-                    "enum": ["observed", "not_observable", "partially_observable"],
-                },
-                "cert_observability_note": {"type": "string | null"},
-                "ja3_hash": {"type": "string | null"},
-                "handshake_complete": {"type": "boolean"},
-            },
-        },
-        "Finding": {
-            "type": "object",
-            "description": "Forensic vulnerability or compliance deviation.",
-            "properties": {
-                "id": {"type": "string"},
-                "severity": {
-                    "type": "string",
-                    "enum": ["critical", "high", "medium", "low", "info"],
-                },
-                "category": {
-                    "type": "string",
-                    "enum": [
-                        "deprecated_tls",
-                        "weak_cipher",
-                        "weak_key",
-                        "weak_signature",
-                        "expired_certificate",
-                        "invalid_certificate",
-                        "no_forward_secrecy",
-                        "starttls_anomaly",
-                        "plaintext_auth",
-                        "ml_anomaly",
-                        "configuration",
-                        "info",
-                    ],
-                },
-                "title": {"type": "string"},
-                "description": {"type": "string"},
-                "evidence": {"$ref": "#/models/Evidence"},
-                "recommendation": {"type": "string"},
-                "cve_references": {"type": "array", "items": {"type": "string"}},
-                "is_ml_finding": {"type": "boolean"},
-            },
-        },
-        "Evidence": {
-            "type": "object",
-            "description": "Traceable forensic provenance for a finding.",
-            "properties": {
-                "session_id": {"type": "string"},
-                "pcap_file": {"type": "string"},
-                "packet_numbers": {"type": "array", "items": {"type": "integer"}},
-                "field": {"type": "string | null"},
-                "observed_value": {"type": "any | null"},
-                "extra": {"type": "object"},
-            },
-        },
-        "CertificateInfo": {
-            "type": "object",
-            "description": "Parsed X.509 certificate metadata.",
-            "properties": {
-                "fingerprint_sha256": {"type": "string"},
-                "subject_cn": {"type": "string | null"},
-                "issuer_cn": {"type": "string | null"},
-                "san": {"type": "array", "items": {"type": "string"}},
-                "not_before": {"type": "string (ISO 8601) | null"},
-                "not_after": {"type": "string (ISO 8601) | null"},
-                "is_expired": {"type": "boolean | null"},
-                "days_until_expiry": {"type": "integer | null"},
-                "is_self_signed": {"type": "boolean | null"},
-                "signature_algorithm": {"type": "string | null"},
-                "serial_number": {"type": "string | null"},
-            },
-        },
-        "RiskScore": {
-            "type": "object",
-            "description": "SecureMailScope Composite Risk Score.",
-            "properties": {
-                "score": {"type": "number", "minimum": 0.0, "maximum": 100.0},
-                "level": {
-                    "type": "string",
-                    "enum": ["MINIMAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
-                },
-                "rationale": {"type": "array", "items": {"type": "string"}},
-                "critical_count": {"type": "integer"},
-                "high_count": {"type": "integer"},
-                "medium_count": {"type": "integer"},
-                "low_count": {"type": "integer"},
-                "ml_anomaly_count": {"type": "integer"},
-            },
-        },
-    },
-}
+def resolve_schema_name(schema: dict[str, Any] | None) -> str:
+    """Extract a human-friendly model/type name from an OpenAPI schema object."""
+    if not schema:
+        return "void"
+    if "$ref" in schema:
+        return schema["$ref"].split("/")[-1]
+    if schema.get("type") == "array" and "items" in schema:
+        item_name = resolve_schema_name(schema["items"])
+        return f"list[{item_name}]"
+    if "anyOf" in schema:
+        return " | ".join(resolve_schema_name(s) for s in schema["anyOf"])
+    return schema.get("type", "object")
 
 
-# ---------------------------------------------------------------------------
-# Interactive HTML Documentation Renderer
-# ---------------------------------------------------------------------------
+def resolve_schema_shape(
+    schema: dict[str, Any] | None,
+    schemas: dict[str, Any],
+    depth: int = 0,
+) -> Any:
+    """Recursively resolves an OpenAPI schema into a clean, concrete JSON shape description."""
+    if not schema or depth > 3:
+        return "any"
+
+    if "$ref" in schema:
+        ref_name = schema["$ref"].split("/")[-1]
+        if ref_name in schemas:
+            target = schemas[ref_name]
+            return resolve_schema_shape(target, schemas, depth + 1)
+        return ref_name
+
+    if "anyOf" in schema:
+        return " | ".join(resolve_schema_name(s) for s in schema["anyOf"])
+
+    s_type = schema.get("type")
+    if s_type == "array":
+        item_shape = resolve_schema_shape(schema.get("items"), schemas, depth + 1)
+        return [item_shape]
+
+    if "properties" in schema:
+        res = {}
+        for p_name, p_info in schema["properties"].items():
+            p_type = p_info.get("type")
+            p_desc = p_info.get("description", "")
+            if "$ref" in p_info:
+                ref_sub = p_info["$ref"].split("/")[-1]
+                res[p_name] = f"<{ref_sub}>"
+            elif p_type == "array":
+                sub_items = p_info.get("items", {})
+                if "$ref" in sub_items:
+                    res[p_name] = [f"<{sub_items['$ref'].split('/')[-1]}>"]
+                else:
+                    res[p_name] = [sub_items.get("type", "any")]
+            else:
+                desc_hint = f" ({p_desc})" if p_desc else ""
+                res[p_name] = f"{p_type or 'any'}{desc_hint}"
+        return res
+
+    return s_type or "object"
 
 
-def render_docs_html(spec: dict[str, Any] = API_SPEC_CATALOG) -> str:
-    """Renders a self-contained, aesthetic, dark-mode interactive HTML API reference."""
-    endpoints = spec.get("endpoints", [])
-    models = spec.get("models", {})
+def generate_curl_command(
+    method: str,
+    path: str,
+    parameters: list[dict[str, Any]],
+    request_body: dict[str, Any] | None,
+) -> str:
+    """Synthesizes a realistic curl command from path and OpenAPI metadata."""
+    sample_path = path
+    # Replace path parameters with realistic sample values
+    replacements = {
+        "{filename}": "01_enterprise_secure_baseline.pcap",
+        "{analysis_id}": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+        "{session_id}": "stream-0",
+    }
+    for k, v in replacements.items():
+        sample_path = sample_path.replace(k, v)
 
-    # Group endpoints by group
+    query_params = [p for p in parameters if p.get("in") == "query" and p.get("required")]
+    if query_params:
+        q_str = "&".join(f"{p['name']}={p.get('example', 'value')}" for p in query_params)
+        sample_path = f"{sample_path}?{q_str}"
+
+    base_url = "http://localhost:8000"
+    if method == "GET":
+        return f"curl -s {base_url}{sample_path}"
+    elif method == "POST":
+        if request_body:
+            ct = request_body.get("content_type", "application/json")
+            if "multipart" in ct:
+                return f"curl -X POST -F 'file=@sample.pcap' {base_url}{sample_path}"
+            example = request_body.get("example")
+            if example:
+                body_json = json.dumps(example)
+                return f"curl -X POST {base_url}{sample_path} -H 'Content-Type: application/json' -d '{body_json}'"
+        return f"curl -X POST {base_url}{sample_path}"
+
+    return f"curl -X {method} {base_url}{sample_path}"
+
+
+def get_api_catalog(openapi: dict[str, Any]) -> dict[str, Any]:
+    """
+    Dynamically extracts a structured catalog of endpoints and shapes
+    from FastAPI's live openapi schema for automated tools and coding agents.
+    """
+    schemas = openapi.get("components", {}).get("schemas", {})
+    endpoints = []
+
+    for path, methods in openapi.get("paths", {}).items():
+        for method_name, op in methods.items():
+            if method_name.lower() not in (
+                "get",
+                "post",
+                "put",
+                "delete",
+                "patch",
+            ):
+                continue
+
+            # Extract response model
+            resps = op.get("responses", {})
+            resp_200 = resps.get("200") or resps.get(200) or {}
+            content = resp_200.get("content", {})
+            ct = next(iter(content.keys()), "application/json") if content else "application/json"
+            resp_schema = content.get(ct, {}).get("schema") if content else None
+            model_name = resolve_schema_name(resp_schema)
+            shape = resolve_schema_shape(resp_schema, schemas)
+
+            # Request body
+            req_body_obj = op.get("requestBody")
+            req_body = None
+            if req_body_obj:
+                rb_content = req_body_obj.get("content", {})
+                rb_ct = (
+                    next(iter(rb_content.keys()), "application/json")
+                    if rb_content
+                    else "application/json"
+                )
+                rb_schema = rb_content.get(rb_ct, {}).get("schema", {})
+                req_body = {
+                    "content_type": rb_ct,
+                    "model": resolve_schema_name(rb_schema),
+                    "schema": rb_schema,
+                    "shape": resolve_schema_shape(rb_schema, schemas),
+                }
+
+            # Parameters
+            params = [
+                {
+                    "name": p.get("name"),
+                    "in": p.get("in"),
+                    "required": p.get("required", False),
+                    "type": p.get("schema", {}).get("type", "string"),
+                    "description": p.get("description", ""),
+                    "example": p.get("example") or p.get("schema", {}).get("example"),
+                }
+                for p in op.get("parameters", [])
+            ]
+
+            curl_cmd = generate_curl_command(method_name.upper(), path, params, req_body)
+
+            endpoints.append(
+                {
+                    "id": op.get(
+                        "operationId",
+                        f"{method_name}_{path.replace('/', '_')}",
+                    ),
+                    "group": (op.get("tags") or ["General"])[0],
+                    "method": method_name.upper(),
+                    "path": path,
+                    "summary": op.get("summary", ""),
+                    "description": op.get("description", "").strip(),
+                    "parameters": params,
+                    "request_body": req_body,
+                    "response": {
+                        "status_code": 200,
+                        "content_type": ct,
+                        "model": model_name,
+                        "shape": shape,
+                    },
+                    "curl_example": curl_cmd,
+                }
+            )
+
+    return {
+        "api": openapi.get("info", {}).get("title", "SecureMailScope API"),
+        "version": openapi.get("info", {}).get("version", "0.1.0"),
+        "description": openapi.get("info", {}).get("description", ""),
+        "base_url": "/",
+        "openapi_url": "/openapi.json",
+        "documentation_url": "/docs",
+        "endpoints": endpoints,
+        "models": schemas,
+    }
+
+
+def render_docs_html(openapi: dict[str, Any]) -> str:
+    """Renders a self-contained, aesthetic, dark-mode interactive HTML API reference dynamically from OpenAPI."""
+    catalog = get_api_catalog(openapi)
+    endpoints = catalog.get("endpoints", [])
+    models = catalog.get("models", {})
+
+    # Group endpoints by group (tag)
     groups: dict[str, list[dict[str, Any]]] = {}
     for ep in endpoints:
         grp = ep.get("group", "General")
@@ -1105,21 +261,12 @@ def render_docs_html(spec: dict[str, Any] = API_SPEC_CATALOG) -> str:
             req_body_html = ""
             if req_body:
                 ct = req_body.get("content_type", "application/json")
-                shape_str = json.dumps(req_body.get("shape", req_body.get("fields", {})), indent=2)
-                example_str = (
-                    json.dumps(req_body.get("example"), indent=2) if req_body.get("example") else ""
-                )
-                example_block = (
-                    f'<div class="code-sublabel">Example Payload:</div><pre><code>{example_str}</code></pre>'
-                    if example_str
-                    else ""
-                )
+                shape_str = json.dumps(req_body.get("shape", req_body.get("schema", {})), indent=2)
                 req_body_html = f"""
                 <div class="section-block">
-                    <div class="section-label">Request Body <span class="content-type">({ct})</span></div>
-                    <div class="code-sublabel">Shape Definition:</div>
+                    <div class="section-label">Request Body <span class="content-type">({ct})</span> <span class="model-tag">Model: {req_body.get("model")}</span></div>
+                    <div class="code-sublabel">Payload Shape:</div>
                     <pre><code>{shape_str}</code></pre>
-                    {example_block}
                 </div>
                 """
 
@@ -1134,17 +281,6 @@ def render_docs_html(spec: dict[str, Any] = API_SPEC_CATALOG) -> str:
                 if isinstance(resp_shape, (dict, list))
                 else str(resp_shape)
             )
-            resp_example = resp.get("example", {})
-            resp_example_str = (
-                json.dumps(resp_example, indent=2)
-                if isinstance(resp_example, (dict, list))
-                else str(resp_example)
-            )
-
-            aliases_html = ""
-            if ep.get("aliases"):
-                alias_badges = " ".join(f"<code>{a}</code>" for a in ep["aliases"])
-                aliases_html = f'<div class="endpoint-aliases">Aliases: {alias_badges}</div>'
 
             curl_cmd = ep.get("curl_example", f"curl http://localhost:8000{path}")
 
@@ -1156,7 +292,6 @@ def render_docs_html(spec: dict[str, Any] = API_SPEC_CATALOG) -> str:
                         <h3 class="endpoint-path">{path}</h3>
                         <span class="badge badge-status">HTTP {status_code}</span>
                     </div>
-                    {aliases_html}
                     <div class="endpoint-summary">{ep.get("summary", "")}</div>
                     <p class="endpoint-desc">{ep.get("description", "")}</p>
 
@@ -1171,8 +306,6 @@ def render_docs_html(spec: dict[str, Any] = API_SPEC_CATALOG) -> str:
                         </div>
                         <div class="code-sublabel">Schema & Shape:</div>
                         <pre><code>{resp_shape_str}</code></pre>
-                        <div class="code-sublabel">Concrete Example:</div>
-                        <pre><code>{resp_example_str}</code></pre>
                     </div>
 
                     <div class="section-block">
@@ -1189,7 +322,7 @@ def render_docs_html(spec: dict[str, Any] = API_SPEC_CATALOG) -> str:
     # Models section
     models_nav = '<div class="nav-group-title">Data Models & Schemas</div>'
     models_content = []
-    for m_name, m_spec in models.items():
+    for m_name, m_spec in sorted(models.items()):
         m_slug = f"model-{m_name.lower()}"
         models_nav += f'<a href="#{m_slug}" class="nav-item"><span class="badge badge-model">TYPE</span><span class="nav-path">{m_name}</span></a>'
         props = m_spec.get("properties", {})
@@ -1230,7 +363,6 @@ def render_docs_html(spec: dict[str, Any] = API_SPEC_CATALOG) -> str:
             --bg-card-hover: #1e293b;
             --bg-code: #030712;
             --border-color: #1e293b;
-            --border-highlight: #334155;
             --text-main: #f8fafc;
             --text-muted: #94a3b8;
             --accent-cyan: #06b6d4;
@@ -1252,7 +384,6 @@ def render_docs_html(spec: dict[str, Any] = API_SPEC_CATALOG) -> str:
             flex-direction: column;
             min-height: 100vh;
         }}
-        /* Header */
         header {{
             background: #0b1120;
             border-bottom: 1px solid var(--border-color);
@@ -1323,17 +454,7 @@ def render_docs_html(spec: dict[str, Any] = API_SPEC_CATALOG) -> str:
             border-color: var(--accent-cyan);
             color: var(--accent-cyan);
         }}
-        .btn-primary {{
-            background: var(--accent-cyan);
-            color: #030712;
-            border: 1px solid var(--accent-cyan);
-            font-weight: 600;
-        }}
-        .btn-primary:hover {{
-            background: #22d3ee;
-        }}
 
-        /* Main Workspace Layout */
         .workspace {{
             display: flex;
             flex: 1;
@@ -1396,7 +517,6 @@ def render_docs_html(spec: dict[str, Any] = API_SPEC_CATALOG) -> str:
             text-overflow: ellipsis;
         }}
 
-        /* Content Area */
         .content {{
             flex: 1;
             padding: 2.5rem 3.5rem;
@@ -1423,6 +543,7 @@ def render_docs_html(spec: dict[str, Any] = API_SPEC_CATALOG) -> str:
             display: flex;
             gap: 0.6rem;
             margin-top: 1.25rem;
+            flex-wrap: wrap;
         }}
         .spec-pill {{
             font-size: 0.8rem;
@@ -1434,7 +555,6 @@ def render_docs_html(spec: dict[str, Any] = API_SPEC_CATALOG) -> str:
             color: #cbd5e1;
         }}
 
-        /* Endpoint Cards */
         .endpoint-card {{
             background: var(--bg-card);
             border: 1px solid var(--border-color);
@@ -1456,12 +576,6 @@ def render_docs_html(spec: dict[str, Any] = API_SPEC_CATALOG) -> str:
             font-weight: 700;
             color: #f1f5f9;
         }}
-        .endpoint-aliases {{
-            font-size: 0.78rem;
-            color: var(--text-muted);
-            margin-bottom: 0.75rem;
-            font-family: var(--font-mono);
-        }}
         .endpoint-summary {{
             font-size: 1rem;
             font-weight: 600;
@@ -1474,7 +588,6 @@ def render_docs_html(spec: dict[str, Any] = API_SPEC_CATALOG) -> str:
             margin-bottom: 1.25rem;
         }}
 
-        /* Badges */
         .badge {{
             font-family: var(--font-mono);
             font-size: 0.7rem;
@@ -1496,7 +609,6 @@ def render_docs_html(spec: dict[str, Any] = API_SPEC_CATALOG) -> str:
         .type-tag {{ font-family: var(--font-mono); font-size: 0.8rem; color: var(--accent-cyan); }}
         .model-tag {{ font-family: var(--font-mono); font-size: 0.8rem; color: var(--accent-violet); margin-left: 0.5rem; }}
 
-        /* Sections & Tables */
         .section-block {{
             margin-top: 1.25rem;
             padding-top: 1rem;
@@ -1584,7 +696,6 @@ def render_docs_html(spec: dict[str, Any] = API_SPEC_CATALOG) -> str:
             border-color: var(--accent-cyan);
         }}
 
-        /* Toast */
         #toast {{
             position: fixed;
             bottom: 2rem;

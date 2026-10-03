@@ -1,6 +1,9 @@
 """
 SecureMailScope — FastAPI Backend
 REST API exposing PCAP analysis, session data, and report generation.
+
+All API endpoints, request/response models, and parameters are documented
+directly beside the code using Python docstrings, FastAPI tags, and Pydantic Field descriptions.
 """
 
 from __future__ import annotations
@@ -13,12 +16,23 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import (
+    BackgroundTasks,
+    FastAPI,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
+from fastapi import (
+    Path as FastPath,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from backend.api.docs import API_SPEC_CATALOG, render_docs_html
+from backend.api.docs import get_api_catalog, render_docs_html
 from backend.models.session import AnalysisResult, Finding, TCPSession
 from backend.pcap.pipeline import analyse_pcap
 from backend.reporting.generator import (
@@ -30,7 +44,7 @@ from backend.reporting.generator import (
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# App Setup
+# App Setup & Lifespan
 # ---------------------------------------------------------------------------
 
 _background_tasks: set[asyncio.Task] = set()
@@ -38,7 +52,7 @@ _background_tasks: set[asyncio.Task] = set()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan context manager for background task management."""
+    """Lifespan context manager for managing async background tasks."""
     yield
     for task in list(_background_tasks):
         task.cancel()
@@ -46,9 +60,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="SecureMailScope API",
-    description="AI-Assisted Cryptographic Security Posture Assessment for Secure Email Communications",
+    description=(
+        "AI-Assisted Cryptographic Security Posture Assessment for Secure Email Communications. "
+        "Provides passive network traffic inspection, STARTTLS state machine validation, "
+        "X.509 certificate auditing, and 16-D Isolation Forest anomaly detection for SMTP, IMAP, and POP3."
+    ),
     version="0.1.0",
-    docs_url=None,  # Custom documentation handler at /docs
+    docs_url=None,  # Handled dynamically by our /docs endpoint
     redoc_url="/redoc",
     openapi_url="/openapi.json",
     lifespan=lifespan,
@@ -74,95 +92,263 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ---------------------------------------------------------------------------
-# Models
+# Pydantic Schemas (Documented Beside Code)
 # ---------------------------------------------------------------------------
 
 
 class AnalysisRequest(BaseModel):
-    pcap_path: str
+    """Request payload to initiate analysis on a server-side PCAP file."""
+
+    pcap_path: str = Field(
+        ...,
+        description="Local or relative filesystem path to the target PCAP capture file.",
+        examples=["demo_pcaps/01_enterprise_secure_baseline.pcap"],
+    )
 
 
 class AnalysisStatus(BaseModel):
-    analysis_id: str
-    status: str
-    error: str | None = None
+    """Execution status and tracking descriptor for an asynchronous analysis task."""
+
+    analysis_id: str = Field(
+        ...,
+        description="Unique UUIDv4 identifier assigned to the analysis run.",
+        examples=["f47ac10b-58cc-4372-a567-0e02b2c3d479"],
+    )
+    status: str = Field(
+        ...,
+        description="Current execution lifecycle state: 'pending', 'running', 'done', or 'error'.",
+        examples=["pending"],
+    )
+    error: str | None = Field(
+        default=None,
+        description="Error details if the analysis failed; None if pending, running, or successful.",
+        examples=[None],
+    )
 
 
 class PcapEntry(BaseModel):
-    filename: str
-    title: str
-    description: str
-    category: str
-    size_bytes: int
-    sha256_hash: str
-    download_url: str
-    analyse_url: str
+    """Forensic metadata descriptor for an available packet capture file."""
+
+    filename: str = Field(
+        ...,
+        description="Basename of the packet capture file.",
+        examples=["01_enterprise_secure_baseline.pcap"],
+    )
+    title: str = Field(
+        ...,
+        description="Human-readable scenario title.",
+        examples=["Enterprise Secure Baseline"],
+    )
+    description: str = Field(
+        ...,
+        description="Detailed forensic description of the captured traffic scenario.",
+        examples=[
+            "Modern TLS 1.3 / 1.2, ECDHE Forward Secrecy, valid certificates across SMTP, IMAP, and POP3."
+        ],
+    )
+    category: str = Field(
+        ...,
+        description="Scenario classification category ('secure_baseline', 'legacy_crypto', 'downgrade_attack', 'anomalies', 'network_transports').",
+        examples=["secure_baseline"],
+    )
+    size_bytes: int = Field(
+        ...,
+        description="File size in bytes on disk.",
+        examples=[142850],
+    )
+    sha256_hash: str = Field(
+        ...,
+        description="Cryptographic SHA-256 digest of the capture file.",
+        examples=["3d9f10a8b2c45e6f1a890b1234567890abcdef1234567890abcdef1234567890"],
+    )
+    download_url: str = Field(
+        ...,
+        description="REST API URL to download the raw binary PCAP file.",
+        examples=["/api/pcaps/01_enterprise_secure_baseline.pcap"],
+    )
+    analyse_url: str = Field(
+        ...,
+        description="REST API URL to trigger asynchronous analysis for this capture.",
+        examples=["/api/pcaps/01_enterprise_secure_baseline.pcap/analyse"],
+    )
 
 
 class SessionSummaryItem(BaseModel):
-    session_id: str
-    protocol: str
-    src_ip: str
-    src_port: int
-    dst_ip: str
-    dst_port: int
-    risk_level: str | None = None
+    """Brief 5-tuple summary for an active TCP email session."""
+
+    session_id: str = Field(
+        ...,
+        description="Unique TCP stream index identifier.",
+        examples=["stream-0"],
+    )
+    protocol: str = Field(
+        ...,
+        description="Identified application protocol: 'SMTP', 'IMAP', 'POP3', or 'UNKNOWN'.",
+        examples=["SMTP"],
+    )
+    src_ip: str = Field(..., description="Source IPv4 address.", examples=["192.168.1.100"])
+    src_port: int = Field(..., description="Source TCP port.", examples=[49210])
+    dst_ip: str = Field(..., description="Destination IPv4 address.", examples=["192.168.1.25"])
+    dst_port: int = Field(..., description="Destination TCP port.", examples=[587])
+    risk_level: str | None = Field(
+        default=None,
+        description="Session risk level: 'MINIMAL', 'LOW', 'MEDIUM', 'HIGH', or 'CRITICAL'.",
+        examples=["MINIMAL"],
+    )
 
 
 class AnalysisSummaryItem(BaseModel):
-    analysis_id: str
-    status: str
-    pcap: str | None = None
-    risk_score: float | None = None
-    risk_level: str | None = None
-    analyzed_at: str | None = None
-    session_count: int = 0
-    finding_count: int = 0
-    packet_count: int = 0
-    critical_count: int = 0
-    high_count: int = 0
-    sessions: list[SessionSummaryItem] = []
+    """Summary metrics overview for an in-memory or completed analysis run."""
+
+    analysis_id: str = Field(
+        ...,
+        description="Unique UUIDv4 identifier of the analysis run.",
+        examples=["f47ac10b-58cc-4372-a567-0e02b2c3d479"],
+    )
+    status: str = Field(
+        ...,
+        description="Analysis execution status ('pending', 'running', 'done', 'error').",
+        examples=["done"],
+    )
+    pcap: str | None = Field(
+        default=None,
+        description="Basename of the analyzed capture file.",
+        examples=["01_enterprise_secure_baseline.pcap"],
+    )
+    risk_score: float | None = Field(
+        default=None,
+        description="Composite Posture Risk Score (0.0 to 100.0).",
+        examples=[99.0],
+    )
+    risk_level: str | None = Field(
+        default=None,
+        description="Evaluated posture risk band ('MINIMAL', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL').",
+        examples=["MINIMAL"],
+    )
+    analyzed_at: str | None = Field(
+        default=None,
+        description="ISO 8601 UTC timestamp of analysis completion.",
+        examples=["2026-10-03T10:00:00Z"],
+    )
+    session_count: int = Field(
+        default=0,
+        description="Total reconstructed TCP email sessions.",
+        examples=[3],
+    )
+    finding_count: int = Field(
+        default=0,
+        description="Total security findings emitted.",
+        examples=[0],
+    )
+    packet_count: int = Field(
+        default=0,
+        description="Total packets processed in the capture.",
+        examples=[86],
+    )
+    critical_count: int = Field(
+        default=0,
+        description="Count of CRITICAL severity findings.",
+        examples=[0],
+    )
+    high_count: int = Field(
+        default=0,
+        description="Count of HIGH severity findings.",
+        examples=[0],
+    )
+    sessions: list[SessionSummaryItem] = Field(
+        default_factory=list,
+        description="Brief summaries of reconstructed TCP sessions.",
+    )
 
 
 class HealthResponse(BaseModel):
-    status: str
-    version: str
-    tshark_available: bool
-    analyses_cached: int
+    """System operational health and dependency status."""
+
+    status: str = Field(..., description="API operational health status.", examples=["ok"])
+    version: str = Field(..., description="SecureMailScope version.", examples=["0.1.0"])
+    tshark_available: bool = Field(
+        ...,
+        description="Indicates whether the TShark binary was detected in PATH.",
+        examples=[True],
+    )
+    analyses_cached: int = Field(
+        ...,
+        description="Count of analysis results currently cached in memory.",
+        examples=[0],
+    )
 
 
 class DemoRunItem(BaseModel):
-    analysis_id: str
-    pcap: str
+    """Dispatched demo analysis execution item."""
+
+    analysis_id: str = Field(
+        ...,
+        description="UUID assigned to the demo analysis job.",
+        examples=["f47ac10b-58cc-4372-a567-0e02b2c3d479"],
+    )
+    pcap: str = Field(
+        ...,
+        description="Filename of the demo PCAP file.",
+        examples=["01_enterprise_secure_baseline.pcap"],
+    )
 
 
 class DemoRunResponse(BaseModel):
-    demo_analyses: list[DemoRunItem]
+    """Response payload when triggering batch analysis of all canonical demo PCAPs."""
+
+    demo_analyses: list[DemoRunItem] = Field(..., description="List of queued demo analysis tasks.")
 
 
 # ---------------------------------------------------------------------------
-# Interactive & Machine-Readable Documentation Endpoint
+# Interactive & Dynamic Documentation Endpoint
 # ---------------------------------------------------------------------------
 
 
-@app.get("/docs", response_class=HTMLResponse)
-@app.get("/api/docs", response_class=HTMLResponse)
-@app.get("/docs.json", response_class=JSONResponse)
-@app.get("/api/docs.json", response_class=JSONResponse)
+@app.get(
+    "/docs",
+    response_class=HTMLResponse,
+    tags=["System & Documentation"],
+    summary="Interactive API documentation & machine-readable shape catalog",
+)
+@app.get(
+    "/api/docs",
+    response_class=HTMLResponse,
+    tags=["System & Documentation"],
+    include_in_schema=False,
+)
+@app.get(
+    "/docs.json",
+    response_class=JSONResponse,
+    tags=["System & Documentation"],
+    include_in_schema=False,
+)
+@app.get(
+    "/api/docs.json",
+    response_class=JSONResponse,
+    tags=["System & Documentation"],
+    include_in_schema=False,
+)
 async def api_docs(
     request: Request,
-    format: str | None = None,
+    format: str | None = Query(
+        default=None,
+        description="Optional format override: 'json' (shape spec catalog), 'html' (interactive UI), or 'openapi' (raw OpenAPI 3.1).",
+    ),
 ):
     """
-    Self-documenting API shape catalog & interactive reference.
-    Returns structured JSON shape specifications for API-consuming tools, agents,
-    and SDKs (?format=json or Accept: application/json), or interactive HTML
-    documentation for web browsers.
+    Interactive & machine-readable documentation and shape reference endpoint.
+
+    Dynamically inspected from FastAPI's live OpenAPI schema (derived from Python
+    docstrings, route metadata, and Pydantic models).
+
+    - **Browser GET**: Returns a self-contained, responsive dark-mode interactive HTML reference.
+    - **Accept: application/json** or **?format=json**: Returns structured JSON endpoint shapes and models for automated tools.
+    - **?format=openapi**: Returns the raw OpenAPI 3.1 schema.
     """
     path = request.url.path.lower()
     accept_header = request.headers.get("accept", "").lower()
+    openapi_schema = app.openapi()
 
-    # Determine whether caller wants JSON or HTML
     wants_json = (
         path.endswith(".json")
         or format == "json"
@@ -170,17 +356,22 @@ async def api_docs(
     )
 
     if format == "openapi":
-        return JSONResponse(app.openapi())
+        return JSONResponse(openapi_schema)
 
     if wants_json:
-        return JSONResponse(API_SPEC_CATALOG)
+        return JSONResponse(get_api_catalog(openapi_schema))
 
-    return HTMLResponse(render_docs_html(API_SPEC_CATALOG))
+    return HTMLResponse(render_docs_html(openapi_schema))
 
 
-@app.get("/swagger", include_in_schema=False)
+@app.get(
+    "/swagger",
+    tags=["System & Documentation"],
+    include_in_schema=False,
+    summary="Standard Swagger UI explorer",
+)
 async def swagger_ui():
-    """Optional Swagger UI interface."""
+    """Optional Swagger UI interface querying /openapi.json."""
     from fastapi.openapi.docs import get_swagger_ui_html
 
     return get_swagger_ui_html(
@@ -194,12 +385,28 @@ async def swagger_ui():
 # ---------------------------------------------------------------------------
 
 
-@app.post("/api/analysis/upload", response_model=AnalysisStatus)
+@app.post(
+    "/api/analysis/upload",
+    response_model=AnalysisStatus,
+    tags=["Analysis & Ingestion"],
+    summary="Upload a PCAP capture file and start asynchronous analysis",
+)
 async def upload_and_analyse(
-    file: UploadFile = File(...),
+    file: UploadFile = File(
+        ...,
+        description="Packet capture file (.pcap, .pcapng, or .cap) to ingest.",
+    ),
     background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
-    """Upload a PCAP file and start analysis."""
+    """
+    Upload a raw packet capture file via multipart/form-data.
+
+    Validates file extension (.pcap, .pcapng, .cap), saves to a temporary forensic
+    upload directory, and schedules background stream reconstruction, protocol state
+    machine analysis, cryptographic posture evaluation, and ML anomaly detection.
+
+    Returns an `analysis_id` and initial `pending` status.
+    """
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided")
 
@@ -210,7 +417,6 @@ async def upload_and_analyse(
     analysis_id = str(uuid.uuid4())
     pcap_path = UPLOAD_DIR / f"{analysis_id}{suffix}"
 
-    # Save upload
     content = await file.read()
     with open(pcap_path, "wb") as f:
         f.write(content)
@@ -221,15 +427,24 @@ async def upload_and_analyse(
     return AnalysisStatus(analysis_id=analysis_id, status="pending")
 
 
-@app.post("/api/analysis/file", response_model=AnalysisStatus)
+@app.post(
+    "/api/analysis/file",
+    response_model=AnalysisStatus,
+    tags=["Analysis & Ingestion"],
+    summary="Trigger analysis of a PCAP by server filesystem path",
+)
 async def analyse_file(
     request: AnalysisRequest,
     background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
-    """Analyse a PCAP file by server-side path (for demo PCAPs)."""
+    """
+    Trigger analysis of a PCAP located on the server filesystem.
+
+    Checks DEMO_PCAPS_DIR, project root, and absolute paths. Dispatches
+    background processing and returns immediately with a tracking ID.
+    """
     pcap_path = Path(request.pcap_path)
     if not pcap_path.exists():
-        # Check DEMO_PCAPS_DIR
         alt_demo = DEMO_PCAPS_DIR / pcap_path.name
         if alt_demo.exists():
             pcap_path = alt_demo
@@ -247,8 +462,24 @@ async def analyse_file(
     return AnalysisStatus(analysis_id=analysis_id, status="pending")
 
 
-@app.get("/api/analysis/{analysis_id}/status", response_model=AnalysisStatus)
-async def get_analysis_status(analysis_id: str):
+@app.get(
+    "/api/analysis/{analysis_id}/status",
+    response_model=AnalysisStatus,
+    tags=["Analysis & Forensics"],
+    summary="Query processing status of an analysis job",
+)
+async def get_analysis_status(
+    analysis_id: str = FastPath(
+        ...,
+        description="UUID of the analysis to query.",
+        examples=["f47ac10b-58cc-4372-a567-0e02b2c3d479"],
+    ),
+):
+    """
+    Poll execution state for an active or completed analysis run.
+
+    Returns status ('pending', 'running', 'done', 'error') and any error message.
+    """
     if analysis_id not in _analysis_status:
         raise HTTPException(status_code=404, detail="Analysis not found")
     return AnalysisStatus(
@@ -258,8 +489,28 @@ async def get_analysis_status(analysis_id: str):
     )
 
 
-@app.get("/api/analysis/{analysis_id}", response_model=AnalysisResult | AnalysisStatus)
-async def get_analysis(analysis_id: str):
+@app.get(
+    "/api/analysis/{analysis_id}",
+    response_model=AnalysisResult | AnalysisStatus,
+    tags=["Analysis & Forensics"],
+    summary="Retrieve complete forensic analysis result tree",
+)
+async def get_analysis(
+    analysis_id: str = FastPath(
+        ...,
+        description="UUID of the analysis (prefix match supported).",
+        examples=["f47ac10b-58cc-4372-a567-0e02b2c3d479"],
+    ),
+):
+    """
+    Retrieve the complete forensic analysis data tree.
+
+    Contains capture metadata, reconstructed TCP sessions, STARTTLS negotiation states,
+    dissected TLS handshakes, X.509 certificate chains, ML anomaly scores, composite
+    posture risk score, protocol summaries, all security findings, and prioritized recommendations.
+
+    If the analysis is still pending or running, returns current status descriptor.
+    """
     status = _analysis_status.get(analysis_id)
     if not status:
         for aid, st in _analysis_status.items():
@@ -272,14 +523,54 @@ async def get_analysis(analysis_id: str):
     return result
 
 
-@app.get("/api/analysis/{analysis_id}/sessions", response_model=list[TCPSession])
-async def get_sessions(analysis_id: str):
+@app.get(
+    "/api/analysis/{analysis_id}/sessions",
+    response_model=list[TCPSession],
+    tags=["Analysis & Forensics"],
+    summary="Retrieve all reconstructed TCP email sessions in capture",
+)
+async def get_sessions(
+    analysis_id: str = FastPath(
+        ...,
+        description="UUID of the analysis run.",
+        examples=["f47ac10b-58cc-4372-a567-0e02b2c3d479"],
+    ),
+):
+    """
+    List all reconstructed TCP email conversations in the capture.
+
+    Each session includes 5-tuple network coordinates, application protocol,
+    STARTTLS state machine transitions, TLS handshake details (ciphers, version, FS, JA3),
+    X.509 certificates, session-level findings, and 16-D Isolation Forest anomaly scores.
+    """
     result = _get_result_or_404(analysis_id)
     return result.sessions
 
 
-@app.get("/api/analysis/{analysis_id}/sessions/{session_id}", response_model=TCPSession)
-async def get_session(analysis_id: str, session_id: str):
+@app.get(
+    "/api/analysis/{analysis_id}/sessions/{session_id}",
+    response_model=TCPSession,
+    tags=["Analysis & Forensics"],
+    summary="Retrieve granular forensic parameters for a specific TCP stream",
+)
+async def get_session(
+    analysis_id: str = FastPath(
+        ...,
+        description="UUID of the analysis run.",
+        examples=["f47ac10b-58cc-4372-a567-0e02b2c3d479"],
+    ),
+    session_id: str = FastPath(
+        ...,
+        description="Session stream identifier (e.g. 'stream-0').",
+        examples=["stream-0"],
+    ),
+):
+    """
+    Inspect detailed forensic telemetry for a single TCP stream.
+
+    Provides raw protocol command banners, packet timing, TLS extension lists,
+    certificate validity timestamps, and session-level risk deductions.
+    """
     result = _get_result_or_404(analysis_id)
     for s in result.sessions:
         if s.session_id == session_id:
@@ -287,12 +578,35 @@ async def get_session(analysis_id: str, session_id: str):
     raise HTTPException(status_code=404, detail="Session not found")
 
 
-@app.get("/api/analysis/{analysis_id}/findings", response_model=list[Finding])
+@app.get(
+    "/api/analysis/{analysis_id}/findings",
+    response_model=list[Finding],
+    tags=["Analysis & Forensics"],
+    summary="Query security findings with optional severity and category filters",
+)
 async def get_findings(
-    analysis_id: str,
-    severity: str | None = None,
-    category: str | None = None,
+    analysis_id: str = FastPath(
+        ...,
+        description="UUID of the analysis run.",
+        examples=["f47ac10b-58cc-4372-a567-0e02b2c3d479"],
+    ),
+    severity: str | None = Query(
+        default=None,
+        description="Filter by finding severity: 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'.",
+        examples=["CRITICAL"],
+    ),
+    category: str | None = Query(
+        default=None,
+        description="Filter by finding category: 'deprecated_tls', 'weak_cipher', 'weak_key', 'expired_certificate', 'starttls_anomaly', 'plaintext_auth', 'ml_anomaly'.",
+        examples=["starttls_anomaly"],
+    ),
 ):
+    """
+    Retrieve security findings across all sessions in the capture.
+
+    Every finding includes traceable evidence provenance: packet numbers,
+    observed field names, and values. Supports filtering by severity and category.
+    """
     result = _get_result_or_404(analysis_id)
     findings = result.all_findings
     if severity:
@@ -313,7 +627,7 @@ async def get_findings(
 
 
 # ---------------------------------------------------------------------------
-# Demo PCAPs
+# Demo PCAPs & Direct Ingestion
 # ---------------------------------------------------------------------------
 
 
@@ -379,17 +693,55 @@ def _build_pcap_entry(p: Path) -> dict:
     }
 
 
-@app.get("/api/pcaps", response_model=list[PcapEntry])
-@app.get("/api/demo/pcaps", response_model=list[PcapEntry])
+@app.get(
+    "/api/pcaps",
+    response_model=list[PcapEntry],
+    tags=["PCAPs & Capture Management"],
+    summary="List available PCAPs with metadata, checksums, and trigger URLs",
+)
+@app.get(
+    "/api/demo/pcaps",
+    response_model=list[PcapEntry],
+    tags=["PCAPs & Capture Management"],
+    include_in_schema=False,
+)
 async def list_pcaps():
-    """List available PCAP files with metadata, checksums, and analysis trigger URLs."""
+    """
+    Retrieve metadata, file sizes, SHA-256 digests, scenario categories,
+    and analysis trigger URLs for all canonical benchmark PCAPs and stored capture files.
+    """
     return [_build_pcap_entry(p) for p in _get_demo_pcaps()]
 
 
-@app.get("/api/pcaps/{filename}")
-@app.get("/api/demo/pcaps/{filename}")
-async def download_pcap(filename: str):
-    """Download raw PCAP capture file."""
+@app.get(
+    "/api/pcaps/{filename}",
+    tags=["PCAPs & Capture Management"],
+    summary="Download raw binary PCAP capture file",
+    response_class=FileResponse,
+    responses={
+        200: {
+            "content": {"application/vnd.tcpdump.pcap": {}},
+            "description": "Raw binary packet capture file.",
+        },
+        404: {"description": "PCAP file not found."},
+    },
+)
+@app.get(
+    "/api/demo/pcaps/{filename}",
+    tags=["PCAPs & Capture Management"],
+    include_in_schema=False,
+)
+async def download_pcap(
+    filename: str = FastPath(
+        ...,
+        description="Name of the PCAP file to download (e.g. '01_enterprise_secure_baseline.pcap').",
+        examples=["01_enterprise_secure_baseline.pcap"],
+    ),
+):
+    """
+    Download the raw binary packet capture file (.pcap or .pcapng) for offline
+    inspection in Wireshark or external forensic tooling.
+    """
     pcap_path = DEMO_PCAPS_DIR / filename
     if not pcap_path.exists() or not pcap_path.is_file():
         raise HTTPException(status_code=404, detail=f"PCAP not found: {filename}")
@@ -400,13 +752,35 @@ async def download_pcap(filename: str):
     )
 
 
-@app.post("/api/pcaps/{filename}/analyse", response_model=AnalysisStatus)
-@app.post("/api/pcaps/{filename}/analyze", response_model=AnalysisStatus)
+@app.post(
+    "/api/pcaps/{filename}/analyse",
+    response_model=AnalysisStatus,
+    tags=["PCAPs & Capture Management"],
+    summary="Trigger asynchronous analysis of a stored PCAP from scratch",
+)
+@app.post(
+    "/api/pcaps/{filename}/analyze",
+    response_model=AnalysisStatus,
+    tags=["PCAPs & Capture Management"],
+    include_in_schema=False,
+)
 async def analyse_pcap_by_name(
-    filename: str,
+    filename: str = FastPath(
+        ...,
+        description="Filename of the PCAP in the repository directory to re-analyze.",
+        examples=["01_enterprise_secure_baseline.pcap"],
+    ),
     background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
-    """Trigger a fresh analysis of an available PCAP from scratch."""
+    """
+    Trigger a fresh analysis of an available PCAP file from scratch in the background.
+
+    Runs the complete forensic pipeline: TShark extraction, TCP session reconstruction,
+    STARTTLS state machine parsing, TLS handshake dissection, X.509 certificate hygiene checks,
+    deterministic scoring, and Isolation Forest ML anomaly detection.
+
+    Returns immediately with an `analysis_id` and `pending` status.
+    """
     pcap_path = DEMO_PCAPS_DIR / filename
     if not pcap_path.exists() or not pcap_path.is_file():
         raise HTTPException(status_code=404, detail=f"PCAP not found: {filename}")
@@ -418,10 +792,31 @@ async def analyse_pcap_by_name(
     return AnalysisStatus(analysis_id=analysis_id, status="pending")
 
 
-@app.post("/api/pcaps/{filename}/analyse/sync", response_model=AnalysisResult)
-@app.post("/api/pcaps/{filename}/analyze/sync", response_model=AnalysisResult)
-async def analyse_pcap_by_name_sync(filename: str):
-    """Trigger synchronous analysis of an available PCAP from scratch (returns complete result)."""
+@app.post(
+    "/api/pcaps/{filename}/analyse/sync",
+    response_model=AnalysisResult,
+    tags=["PCAPs & Capture Management"],
+    summary="Trigger synchronous analysis of a PCAP (blocks until complete)",
+)
+@app.post(
+    "/api/pcaps/{filename}/analyze/sync",
+    response_model=AnalysisResult,
+    tags=["PCAPs & Capture Management"],
+    include_in_schema=False,
+)
+async def analyse_pcap_by_name_sync(
+    filename: str = FastPath(
+        ...,
+        description="Filename of the PCAP to analyze synchronously.",
+        examples=["01_enterprise_secure_baseline.pcap"],
+    ),
+):
+    """
+    Trigger synchronous analysis of an available PCAP from scratch.
+
+    Blocks until the entire forensic pipeline finishes execution, and returns
+    the complete `AnalysisResult` data tree immediately.
+    """
     pcap_path = DEMO_PCAPS_DIR / filename
     if not pcap_path.exists() or not pcap_path.is_file():
         raise HTTPException(status_code=404, detail=f"PCAP not found: {filename}")
@@ -440,9 +835,19 @@ async def analyse_pcap_by_name_sync(filename: str):
         raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}") from exc
 
 
-@app.post("/api/demo/run", response_model=DemoRunResponse)
+@app.post(
+    "/api/demo/run",
+    response_model=DemoRunResponse,
+    tags=["Analysis & Ingestion"],
+    summary="Dispatch background analyses for all 5 canonical demo PCAPs",
+)
 async def run_demo(background_tasks: BackgroundTasks = BackgroundTasks()):
-    """Run analysis on all available demo PCAPs."""
+    """
+    Run analysis on all 5 canonical demo PCAPs in demo_pcaps/.
+
+    Dispatches background jobs for each scenario and returns the list of
+    allocated analysis IDs.
+    """
     all_pcaps = _get_demo_pcaps()
     if not all_pcaps:
         raise HTTPException(
@@ -464,21 +869,73 @@ async def run_demo(background_tasks: BackgroundTasks = BackgroundTasks()):
 # ---------------------------------------------------------------------------
 
 
-@app.get("/api/analysis/{analysis_id}/report/json")
-async def report_json(analysis_id: str):
+@app.get(
+    "/api/analysis/{analysis_id}/report/json",
+    tags=["Forensic Reports"],
+    summary="Download serialized machine-readable JSON forensic report",
+    response_class=JSONResponse,
+)
+async def report_json(
+    analysis_id: str = FastPath(
+        ...,
+        description="UUID of the analysis to generate JSON report for.",
+        examples=["f47ac10b-58cc-4372-a567-0e02b2c3d479"],
+    ),
+):
+    """
+    Download a comprehensive, machine-readable JSON forensic report containing
+    report metadata, capture SHA-256 hashes, session summaries, prioritized findings,
+    and methodology disclaimers.
+    """
     result = _get_result_or_404(analysis_id)
     return JSONResponse(generate_json_report(result))
 
 
-@app.get("/api/analysis/{analysis_id}/report/html", response_class=HTMLResponse)
-async def report_html(analysis_id: str):
+@app.get(
+    "/api/analysis/{analysis_id}/report/html",
+    response_class=HTMLResponse,
+    tags=["Forensic Reports"],
+    summary="Render standalone dark-mode HTML forensic dashboard",
+)
+async def report_html(
+    analysis_id: str = FastPath(
+        ...,
+        description="UUID of the analysis to render HTML dashboard for.",
+        examples=["f47ac10b-58cc-4372-a567-0e02b2c3d479"],
+    ),
+):
+    """
+    Render a self-contained, publication-ready HTML dashboard report.
+    Requires zero external CDN dependencies and features a high-contrast dark theme.
+    """
     result = _get_result_or_404(analysis_id)
     html = generate_html_report(result)
     return HTMLResponse(html)
 
 
-@app.get("/api/analysis/{analysis_id}/report/pdf")
-async def report_pdf(analysis_id: str):
+@app.get(
+    "/api/analysis/{analysis_id}/report/pdf",
+    tags=["Forensic Reports"],
+    summary="Download compiled PDF executive forensic report",
+    response_class=FileResponse,
+    responses={
+        200: {
+            "content": {"application/pdf": {}},
+            "description": "Compiled ReportLab PDF forensic executive report.",
+        }
+    },
+)
+async def report_pdf(
+    analysis_id: str = FastPath(
+        ...,
+        description="UUID of the analysis to generate PDF report for.",
+        examples=["f47ac10b-58cc-4372-a567-0e02b2c3d479"],
+    ),
+):
+    """
+    Streams a formal forensic PDF executive report dynamically compiled via ReportLab.
+    Includes metric cards, risk breakdown tables, packet-level evidence, and guidance.
+    """
     result = _get_result_or_404(analysis_id)
     pdf_path = UPLOAD_DIR / f"{analysis_id}_report.pdf"
     generate_pdf_report(result, str(pdf_path))
@@ -494,8 +951,17 @@ async def report_pdf(analysis_id: str):
 # ---------------------------------------------------------------------------
 
 
-@app.get("/api/health", response_model=HealthResponse)
+@app.get(
+    "/api/health",
+    response_model=HealthResponse,
+    tags=["System & Documentation"],
+    summary="System operational health check",
+)
 async def health():
+    """
+    Operational health check verifying API readiness, software version,
+    system TShark binary availability, and cached analysis counts.
+    """
     import shutil
 
     return HealthResponse(
@@ -506,8 +972,19 @@ async def health():
     )
 
 
-@app.get("/api/analyses", response_model=list[AnalysisSummaryItem])
+@app.get(
+    "/api/analyses",
+    response_model=list[AnalysisSummaryItem],
+    tags=["Analysis & Forensics"],
+    summary="List all cached analyses with summary metrics",
+)
 async def list_analyses():
+    """
+    List all active and cached analyses stored in memory.
+
+    Provides high-level posture scores, risk bands, session counts, packet counts,
+    and finding severity breakdowns.
+    """
     return [
         AnalysisSummaryItem(
             analysis_id=aid,
@@ -543,7 +1020,7 @@ async def list_analyses():
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Background Task Helpers
 # ---------------------------------------------------------------------------
 
 
@@ -557,7 +1034,7 @@ def _get_result_or_404(analysis_id: str) -> AnalysisResult:
 
 
 async def _run_analysis(analysis_id: str, pcap_path: str) -> None:
-    """Background task that runs the analysis pipeline."""
+    """Background task executing the forensic pipeline."""
     _analysis_status[analysis_id] = "running"
     try:
         loop = asyncio.get_event_loop()
