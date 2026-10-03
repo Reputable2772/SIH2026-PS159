@@ -1423,6 +1423,11 @@ code, pre, .mono {
   grid-template-columns: minmax(0, 1fr) 380px;
   gap: 1.25rem;
   align-items: start;
+  transition: grid-template-columns var(--trans);
+}
+
+.session-investigation-layout.full-width {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 /* Ladder Timeline Card */
@@ -1492,9 +1497,9 @@ code, pre, .mono {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #3b82f6;
-  border: 2px solid #60a5fa;
-  box-shadow: 0 0 10px rgba(59, 130, 246, 0.6);
+  background: var(--accent);
+  border: 2px solid var(--border-hi);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
 }
 
 .lifeline-title {
@@ -1521,7 +1526,7 @@ code, pre, .mono {
   top: 0;
   bottom: 0;
   width: 2px;
-  background: #1e3a8a;
+  background: var(--border);
   z-index: 1;
 }
 
@@ -1547,6 +1552,17 @@ code, pre, .mono {
   position: relative;
   min-height: 38px;
   cursor: pointer;
+  border-radius: var(--radius-sm);
+  padding: 2px 0;
+  transition: background var(--trans);
+}
+
+.ladder-row:hover {
+  background: var(--bg-hover);
+}
+
+.ladder-row.row-selected {
+  background: var(--accent-dim);
 }
 
 .ladder-timestamp {
@@ -1568,7 +1584,7 @@ code, pre, .mono {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #3b82f6;
+  background: var(--accent);
   position: absolute;
   z-index: 3;
 }
@@ -1582,7 +1598,8 @@ code, pre, .mono {
   left: 21px;
   width: 338px;
   height: 2px;
-  background: #2563eb;
+  background: var(--accent);
+  opacity: 0.8;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1590,6 +1607,7 @@ code, pre, .mono {
 
 .arrow-line.arrow-alert {
   background: var(--critical);
+  opacity: 1;
 }
 
 .arrow-head {
@@ -1602,12 +1620,12 @@ code, pre, .mono {
 
 .arrow-head.head-right {
   right: 0;
-  border-left: 7px solid #2563eb;
+  border-left: 7px solid var(--accent);
 }
 
 .arrow-head.head-left {
   left: 0;
-  border-right: 7px solid #2563eb;
+  border-right: 7px solid var(--accent);
 }
 
 .arrow-head.head-alert.head-right { border-left-color: var(--critical); }
@@ -1615,8 +1633,8 @@ code, pre, .mono {
 
 .ladder-bubble {
   position: relative;
-  background: #0f1c34;
-  border: 1px solid #1e3a8a;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 0.3rem 0.65rem;
   font-size: 0.76rem;
@@ -1624,30 +1642,33 @@ code, pre, .mono {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
   max-width: 290px;
+  transition: all var(--trans);
 }
 
 .ladder-bubble.bubble-alert {
-  background: rgba(239, 68, 68, 0.15);
-  border-color: var(--critical);
-  color: #fca5a5;
+  background: var(--critical-bg);
+  border-color: var(--critical-border);
+  color: var(--critical);
+  font-weight: 600;
 }
 
 .ladder-bubble.bubble-selected {
   outline: 2px solid var(--accent);
+  border-color: var(--accent);
 }
 
 .bubble-multiline {
   font-family: monospace;
   font-size: 0.7rem;
   line-height: 1.35;
-  color: #86efac;
+  color: var(--low);
 }
 
 .ladder-bubble.capabilities {
-  background: rgba(16, 185, 129, 0.1);
-  border-color: rgba(16, 185, 129, 0.35);
+  background: var(--low-bg);
+  border-color: var(--low-border);
 }
 
 .packet-badge {
@@ -1661,7 +1682,7 @@ code, pre, .mono {
 }
 
 .packet-badge.badge-alert {
-  background: rgba(239, 68, 68, 0.2);
+  background: var(--critical-bg);
   color: var(--critical);
   border-color: var(--critical-border);
 }
@@ -1679,19 +1700,25 @@ code, pre, .mono {
   border-radius: var(--radius-sm);
   border: 1px solid transparent;
   font-size: 0.72rem;
-  max-width: 230px;
+  max-width: 260px;
 }
 
 .ladder-callout-card.callout-success {
-  background: rgba(16, 185, 129, 0.1);
-  border-color: rgba(16, 185, 129, 0.35);
-  color: #6ee7b7;
+  background: var(--low-bg);
+  border-color: var(--low-border);
+  color: var(--low);
 }
 
 .ladder-callout-card.callout-danger {
-  background: rgba(239, 68, 68, 0.12);
-  border-color: rgba(239, 68, 68, 0.35);
-  color: #fca5a5;
+  background: var(--critical-bg);
+  border-color: var(--critical-border);
+  color: var(--critical);
+}
+
+.ladder-callout-card.callout-info {
+  background: var(--info-bg);
+  border-color: var(--info-border);
+  color: var(--info);
 }
 
 .callout-title {

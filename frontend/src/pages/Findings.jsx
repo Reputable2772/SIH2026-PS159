@@ -171,7 +171,7 @@ export default function Findings({ analysisId }) {
             <EvidenceInspector
               key={f.id}
               finding={f}
-              onNavigateSession={(sId) => navigate(`/sessions/${encodeURIComponent(sId)}`)}
+              onNavigateSession={(sId) => navigate(`/sessions/${encodeURIComponent(sId)}?tab=conversation&finding=${encodeURIComponent(f.id)}`)}
             />
           ))}
         </div>
