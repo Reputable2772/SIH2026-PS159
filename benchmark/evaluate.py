@@ -26,62 +26,56 @@ EXPECTED_FILE = Path(__file__).parent / "expected_results.json"
 # ---------------------------------------------------------------------------
 
 EXPECTED_RESULTS = {
-    "01_secure_tls12.pcap": {
-        "protocol": "SMTP",
+    "01_enterprise_secure_baseline.pcap": {
+        "protocol": "SMTP / IMAP / POP3",
         "has_tls": True,
         "expected_findings": [],
         "expected_finding_categories": [],
         "cert_observable": True,
         "anomalous": False,
-        "description": "Secure TLS 1.2 SMTP — no findings expected",
+        "description": "Enterprise Secure Multi-Protocol Baseline (TLS 1.2 / TLS 1.3)",
     },
-    "02_legacy_tls10.pcap": {
-        "protocol": "SMTP",
+    "02_legacy_cryptography_and_certs.pcap": {
+        "protocol": "SMTP / IMAP / POP3",
         "has_tls": True,
-        "expected_finding_categories": ["deprecated_tls"],
+        "expected_finding_categories": [
+            "deprecated_tls",
+            "weak_cipher",
+            "no_forward_secrecy",
+            "expired_certificate",
+            "weak_key",
+            "invalid_certificate",
+        ],
         "cert_observable": True,
         "anomalous": True,
-        "description": "Legacy TLS 1.0 — deprecated_tls finding expected",
+        "description": "Cryptographic Obsolescence, Weak Keys & Certificate Hygiene Failures",
     },
-    "03_weak_cipher.pcap": {
-        "protocol": "SMTP",
-        "has_tls": True,
-        "expected_finding_categories": ["weak_cipher", "no_forward_secrecy"],
-        "cert_observable": True,
+    "03_starttls_downgrade_and_cleartext.pcap": {
+        "protocol": "SMTP / IMAP / POP3",
+        "has_tls": False,
+        "expected_finding_categories": [
+            "starttls_anomaly",
+            "plaintext_auth",
+        ],
+        "cert_observable": False,
         "anomalous": True,
-        "description": "Weak cipher (RSA key exchange) — weak_cipher and no_fs expected",
+        "description": "Active STARTTLS Stripping / 454 Fallback & Cleartext Exfiltration",
     },
-    "04_expired_cert.pcap": {
-        "protocol": "IMAP",
-        "has_tls": True,
-        "expected_finding_categories": ["expired_certificate"],
-        "cert_observable": True,
-        "anomalous": True,
-        "description": "Expired certificate — expired_certificate finding expected",
-    },
-    "05_starttls_fallback.pcap": {
+    "04_protocol_anomalies_and_fuzzing.pcap": {
         "protocol": "SMTP",
         "has_tls": False,
         "expected_finding_categories": ["starttls_anomaly"],
         "cert_observable": False,
         "anomalous": True,
-        "description": "STARTTLS fallback — starttls_anomaly finding expected",
+        "description": "Protocol Desync, Web Probes, Buffer Fuzzing & Corrupt Records",
     },
-    "06_anomalous_handshake.pcap": {
-        "protocol": "SMTP",
+    "05_realworld_network_transports.pcap": {
+        "protocol": "SMTP / IMAP / POP3",
         "has_tls": True,
-        "expected_finding_categories": ["weak_key", "no_forward_secrecy"],
-        "cert_observable": True,
-        "anomalous": True,
-        "description": "Anomalous: weak key, no FS — ml_anomaly or rule finding expected",
-    },
-    "07_plaintext_smtp.pcap": {
-        "protocol": "SMTP",
-        "has_tls": False,
         "expected_finding_categories": ["starttls_anomaly"],
         "cert_observable": False,
-        "anomalous": False,
-        "description": "Plaintext SMTP — no_tls finding expected",
+        "anomalous": True,
+        "description": "Real-World Network Degradation, Packet Loss, Truncated Certs & RSTs",
     },
 }
 
