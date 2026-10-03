@@ -20,17 +20,19 @@ export default function RecentAnalyses({ analyses = [], onSelectAnalysis, active
   }
 
   return (
-    <div className="card" style={{ marginBottom: '1.75rem' }}>
-      <div className="card-header">
+    <div className="card" style={{ marginBottom: '2rem' }}>
+      <div className="card-header" style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '0.75rem' }}>
         <div>
-          <div className="card-title">Recent Captures & Analyses</div>
+          <div className="card-title" style={{ fontSize: '0.95rem', fontWeight: 700 }}>
+            Recent Investigations
+          </div>
           <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
-            Previously audited PCAP captures ready for technical deep-dive investigation.
+            Previously audited network captures ready for deep-dive session investigation.
           </div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
         {doneAnalyses.map((a) => {
           const isActive = a.analysis_id === activeAnalysisId
           const filename = a.pcap || `capture-${a.analysis_id.slice(0, 8)}.pcap`
@@ -56,18 +58,19 @@ export default function RecentAnalyses({ analyses = [], onSelectAnalysis, active
               }}
               className="recent-analysis-row"
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 220 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 260 }}>
                 <div style={{
-                  width: 34, height: 34, borderRadius: 6,
+                  width: 32, height: 32, borderRadius: 6,
                   background: 'var(--bg-card)',
                   border: '1px solid var(--border)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: 'var(--accent)'
+                  color: 'var(--accent)',
+                  flexShrink: 0
                 }}>
-                  <FileText size={17} />
+                  <FileText size={16} />
                 </div>
                 <div>
-                  <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text)' }}>
+                  <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text)', fontFamily: 'monospace' }}>
                     {filename}
                   </div>
                   <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.15rem' }}>
@@ -76,41 +79,23 @@ export default function RecentAnalyses({ analyses = [], onSelectAnalysis, active
                 </div>
               </div>
 
-              {/* Metrics */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                  <Layers size={13} color="var(--text-dim)" />
-                  <span><strong>{a.session_count || 1}</strong> session{(a.session_count || 1) > 1 ? 's' : ''}</span>
+              {/* Technical summary pills */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                  <Layers size={13} />
+                  <span>{a.session_count || (a.sessions?.length ?? 1)} streams</span>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                  <AlertTriangle size={13} color={a.critical_count > 0 ? 'var(--critical)' : 'var(--text-dim)'} />
-                  <span><strong>{a.finding_count || 0}</strong> finding{(a.finding_count || 0) !== 1 ? 's' : ''}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                  <AlertTriangle size={13} color={a.finding_count > 0 ? 'var(--warning)' : 'var(--text-muted)'} />
+                  <span>{a.finding_count ?? 0} findings</span>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <SeverityBadge severity={level} />
-                  <span style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text)', fontFamily: 'monospace' }}>
-                    {score}/100
-                  </span>
-                </div>
+                <SeverityBadge severity={level} />
 
-                <button
-                  className="btn btn-secondary"
-                  style={{
-                    fontSize: '0.76rem',
-                    padding: '0.3rem 0.65rem',
-                    gap: '0.25rem',
-                    borderColor: isActive ? 'var(--accent)' : undefined
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onSelectAnalysis(a.analysis_id)
-                  }}
-                >
-                  {isActive ? 'Investigating' : 'Investigate'}
-                  <ChevronRight size={13} />
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', color: 'var(--accent)', fontWeight: 600, fontSize: '0.78rem' }}>
+                  Open Case <ChevronRight size={14} />
+                </div>
               </div>
             </div>
           )
