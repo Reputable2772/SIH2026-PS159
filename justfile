@@ -48,7 +48,7 @@ format:
     ruff format .
     ruff check --fix .
 
-# Run unit + integration tests
+# Run unit tests
 test:
     PYTHONPATH="." pytest tests/ -v --tb=short
 
@@ -59,6 +59,7 @@ benchmark:
 
 # Run benchmark and save results
 benchmark-save:
+    @mkdir -p evidence/benchmarks
     PYTHONPATH="." {{PYTHON}} benchmark/evaluate.py 2>&1 | tee evidence/benchmarks/benchmark_$(date +%Y%m%d_%H%M%S).txt
 
 # ─── Demo ───────────────────────────────────────────────────────────────────

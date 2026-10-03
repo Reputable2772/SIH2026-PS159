@@ -41,9 +41,8 @@ benchmark/benchmark_results.json
 htmlcov/
 .pytest_cache/
 
-# Evidence (screenshots are committed; large files excluded)
-evidence/screenshots/*.png
-evidence/screenshots/*.webp
+# Evidence & benchmark logs
+evidence/benchmarks/*.txt
 
 # Secrets / keys (demo certs are OK but not private keys from production)
 *.pem
