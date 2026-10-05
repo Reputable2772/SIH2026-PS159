@@ -10,8 +10,12 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
+    security_opt:
+      - apparmor:unconfined
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
     volumes:
-      - ./demo_pcaps:/app/demo_pcaps:ro,z
       - ./reports:/app/reports:z
     environment:
       - PYTHONUNBUFFERED=1
