@@ -114,7 +114,9 @@ def run_tshark(
     cmd = [
         TSHARK_BIN,
         "-r",
-        pcap_path,
+        "-",  # read from stdin — avoids AppArmor file-path restrictions when
+              # running inside rootless Podman on Ubuntu where security_opt
+              # apparmor=unconfined cannot be honoured by the unprivileged runtime.
         "-T",
         "json",
         "--no-duplicate-keys",
@@ -124,8 +126,15 @@ def run_tshark(
     if extra_filters:
         cmd += ["-Y", extra_filters]
 
-    logger.debug("Running: %s", " ".join(cmd))
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    logger.debug("Running: %s < %s", " ".join(cmd), pcap_path)
+    with open(pcap_path, "rb") as pcap_fh:
+        result = subprocess.run(
+            cmd,
+            stdin=pcap_fh,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
 
     if result.returncode not in (0, 1):  # tshark returns 1 on some warnings
         logger.error("tshark stderr: %s", result.stderr[:2000])
