@@ -1,24 +1,40 @@
-:5173 {
-    root * /usr/share/caddy
-    encode gzip zstd
+{env.DOMAIN}:443 {
+	tls {
+		dns desec {
+			token {env.DESEC_TOKEN}
+		}
 
-    # Reverse proxy API and documentation requests to backend service
-    handle /api* {
-        reverse_proxy backend:8000
-    }
-    handle /docs* {
-        reverse_proxy backend:8000
-    }
-    handle /redoc* {
-        reverse_proxy backend:8000
-    }
-    handle /openapi.json {
-        reverse_proxy backend:8000
-    }
+		propagation_timeout 300s
+		propagation_delay 120s
+		resolvers 1.1.1.1
+	}
 
-    # SPA routing fallback for client-side navigation
-    handle {
-        try_files {path} /index.html
-        file_server
-    }
+	# Logging
+	log {
+		output stdout
+		format console
+	}
+
+	root * /usr/share/caddy
+	encode gzip zstd
+
+	# Reverse proxy API and documentation requests to backend service
+	handle /api* {
+		reverse_proxy backend:8000
+	}
+	handle /docs* {
+		reverse_proxy backend:8000
+	}
+	handle /redoc* {
+		reverse_proxy backend:8000
+	}
+	handle /openapi.json {
+		reverse_proxy backend:8000
+	}
+
+	# SPA routing fallback for client-side navigation
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
 }

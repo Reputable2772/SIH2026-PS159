@@ -1,12 +1,13 @@
-FROM python:3.12-slim-bookworm
+FROM docker.io/library/python:3.12-slim-bookworm
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
 # Install runtime dependencies: TShark (cli), OpenSSL, tcpdump, curl
+# Disable setuid to avoid permission drops, and disable lua in init.lua to prevent superuser warnings/errors
 RUN apt-get update && \
-    echo "wireshark-common wireshark-common/install-setuid boolean true" | debconf-set-selections && \
+    echo "wireshark-common wireshark-common/install-setuid boolean false" | debconf-set-selections && \
     apt-get install -y --no-install-recommends \
         tshark \
         openssl \
@@ -14,7 +15,8 @@ RUN apt-get update && \
         gcc \
         python3-dev \
         curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* && \
+    sed -i 's/disable_lua = false/disable_lua = true/' /usr/share/wireshark/init.lua
 
 WORKDIR /app
 
@@ -32,8 +34,9 @@ COPY scripts/ ./scripts/
 COPY benchmark/ ./benchmark/
 COPY demo_pcaps/ ./demo_pcaps/
 
-# Pre-train the ML anomaly detection model into image
-RUN python -c "from backend.anomaly.detector import TLSAnomalyDetector; det = TLSAnomalyDetector(); det.train(); det.save()"
+# Pre-train the ML anomaly detection model into image and ensure files are globally readable
+RUN python -c "from backend.anomaly.detector import TLSAnomalyDetector; det = TLSAnomalyDetector(); det.train(); det.save()" && \
+    chmod -R a+rX /app /usr/share/wireshark
 
 EXPOSE 8000
 

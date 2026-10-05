@@ -41,3 +41,6 @@ htmlcov/
 
 # Secrets / keys (demo certs are OK but not private keys from production)
 *.pem
+.env
+.env.*
+!.env.example

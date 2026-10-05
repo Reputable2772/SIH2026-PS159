@@ -11,8 +11,8 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./demo_pcaps:/app/demo_pcaps:ro
-      - ./reports:/app/reports
+      - ./demo_pcaps:/app/demo_pcaps:ro,z
+      - ./reports:/app/reports:z
     environment:
       - PYTHONUNBUFFERED=1
       - ENVIRONMENT=production
@@ -32,18 +32,22 @@ services:
     image: securemailscope-frontend:latest
     container_name: securemailscope-frontend
     restart: unless-stopped
+    env_file:
+      - .env
     ports:
+      - "80:80"
+      - "443:443"
       - "5173:5173"
     depends_on:
       - backend
     networks:
       - securemailscope-net
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:5173/"]
+      test: ["CMD", "wget", "-qO-", "--no-check-certificate", "https://localhost/"]
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 5s
+      start_period: 10s
 
 networks:
   securemailscope-net:
