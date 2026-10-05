@@ -52,6 +52,14 @@ _background_tasks: set[asyncio.Task] = set()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for managing async background tasks."""
+    # Pre-analyze demo PCAPs in background on startup so analyses are cached
+    try:
+        for p in _get_demo_pcaps():
+            task = asyncio.create_task(_run_analysis(f"demo-{p.stem}", str(p)))
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
+    except Exception as exc:
+        logger.warning("Startup pre-analysis schedule failed: %s", exc)
     yield
     for task in list(_background_tasks):
         task.cancel()
@@ -786,6 +794,35 @@ async def analyse_pcap_by_name_sync(
         _analysis_status[analysis_id] = "error"
         _analysis_errors[analysis_id] = str(exc)
         raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}") from exc
+
+
+@app.get(
+    "/api/pcaps/{filename}/analysis",
+    response_model=AnalysisResult,
+    tags=["PCAPs & Capture Management"],
+    summary="Retrieve completed analysis for a PCAP or analyze synchronously on demand",
+)
+async def get_or_analyze_pcap(
+    filename: str = FastPath(
+        ...,
+        description="Filename of the PCAP to retrieve analysis for.",
+        examples=["01_enterprise_secure_baseline.pcap"],
+    ),
+):
+    """
+    Retrieve the latest completed forensic analysis for this PCAP file.
+    If not yet analyzed or cached, triggers synchronous analysis and caches the result.
+    """
+    pcap_path = DEMO_PCAPS_DIR / filename
+    if not pcap_path.exists() or not pcap_path.is_file():
+        raise HTTPException(status_code=404, detail=f"PCAP not found: {filename}")
+
+    # Check for existing completed analysis
+    for res in _analyses.values():
+        if res.capture.pcap_filename == filename:
+            return res
+
+    return await analyse_pcap_by_name_sync(filename)
 
 
 @app.post(

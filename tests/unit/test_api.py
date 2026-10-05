@@ -201,6 +201,24 @@ def test_analyse_pcap_by_name(client):
         assert "analysis_id" in data
 
 
+def test_get_or_analyze_pcap(client):
+    res_list = client.get("/api/pcaps")
+    items = res_list.json()
+    if items:
+        filename = items[0]["filename"]
+        res = client.get(f"/api/pcaps/{filename}/analysis")
+        assert res.status_code == 200
+        data = res.json()
+        assert "risk_score" in data
+        assert "capture" in data
+        assert data["capture"]["pcap_filename"] == filename
+
+
+def test_get_or_analyze_pcap_not_found(client):
+    res = client.get("/api/pcaps/non_existent_file.pcap/analysis")
+    assert res.status_code == 404
+
+
 def test_docs_html_response(client):
     res = client.get("/docs", headers={"Accept": "text/html,application/xhtml+xml"})
     assert res.status_code == 200
