@@ -19,6 +19,22 @@ backend:
     PYTHONPATH="$(dirname $(pwd))" \
     uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 
+# Start frontend development server
+frontend:
+    cd frontend && npm run dev
+
+# Install frontend dependencies
+frontend-install:
+    cd frontend && npm install
+
+# Lint frontend
+frontend-lint:
+    cd frontend && npm run lint
+
+# Build frontend production bundle
+frontend-build:
+    cd frontend && npm run build
+
 # ─── Containerization (Podman) ───────────────────────────────────────────────
 
 # Build and start services using podman-compose
@@ -29,11 +45,16 @@ compose-up:
 compose-down:
     podman-compose down
 
+# View container logs
+compose-logs:
+    podman-compose logs -f
+
 # ─── Testing & Benchmarking ─────────────────────────────────────────────────
 
 # Run static analysis and lint checks
 lint:
     ruff check .
+    cd frontend && npm run build
 
 # Format python codebase
 format:

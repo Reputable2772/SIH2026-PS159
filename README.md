@@ -108,13 +108,34 @@ just backend
 # ReDoc at http://localhost:8000/redoc
 ```
 
-### Containerized Service (Podman / Docker Compose)
+### Frontend UI (React + Vite)
+
+The forensic investigation frontend accurately implements all 8 views from the design mockups in `frontend_mockup/`:
 
 ```bash
-# Build and start backend container service
+# Start frontend development server
+just frontend
+# OR
+cd frontend && npm run dev
+# Live at http://localhost:5173
+
+# Build production bundle
+just frontend-build
+# OR
+cd frontend && npm run build
+```
+
+See [frontend/README.md](frontend/README.md) for complete UI documentation and routing details.
+
+### Containerized Service (Podman / Docker Compose)
+```bash
+# Build and start full-stack services (backend on :8000, frontend on :5173)
 just compose-up
 
-# Stop container service
+# View container logs
+just compose-logs
+
+# Stop container services
 just compose-down
 ```
 
