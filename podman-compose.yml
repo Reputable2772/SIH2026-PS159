@@ -44,6 +44,10 @@ services:
       - "5173:5173"
     depends_on:
       - backend
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+
     networks:
       - securemailscope-net
     healthcheck:
@@ -56,3 +60,7 @@ services:
 networks:
   securemailscope-net:
     driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:
