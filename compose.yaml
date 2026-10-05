@@ -11,7 +11,7 @@ services:
     ports:
       - "8000:8000"
     security_opt:
-      - apparmor:unconfined
+      - apparmor=unconfined
     cap_add:
       - NET_RAW
       - NET_ADMIN
