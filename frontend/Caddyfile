@@ -1,0 +1,24 @@
+:5173 {
+    root * /usr/share/caddy
+    encode gzip zstd
+
+    # Reverse proxy API and documentation requests to backend service
+    handle /api* {
+        reverse_proxy backend:8000
+    }
+    handle /docs* {
+        reverse_proxy backend:8000
+    }
+    handle /redoc* {
+        reverse_proxy backend:8000
+    }
+    handle /openapi.json {
+        reverse_proxy backend:8000
+    }
+
+    # SPA routing fallback for client-side navigation
+    handle {
+        try_files {path} /index.html
+        file_server
+    }
+}
