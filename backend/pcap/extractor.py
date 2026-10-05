@@ -10,6 +10,7 @@ import hashlib
 import json
 import logging
 import os
+import stat as _stat_mod
 import subprocess
 import tempfile
 from typing import Any
@@ -107,6 +108,41 @@ def run_tshark(
         raise RuntimeError(
             "tshark not found. Ensure wireshark-cli is available in the Nix devshell."
         )
+
+    # ── DEBUG: file accessibility diagnostics (remove once permission issue resolved) ──
+    logger.info(
+        "[tshark-debug] tshark_bin=%r pcap_path=%r uid=%d gid=%d pid=%d",
+        TSHARK_BIN, pcap_path, os.getuid(), os.getgid(), os.getpid(),
+    )
+    try:
+        _st = os.stat(pcap_path)
+        logger.info(
+            "[tshark-debug] stat: size=%d mode=%04o file_uid=%d file_gid=%d "
+            "os.access(R_OK)=%s os.access(F_OK)=%s",
+            _st.st_size,
+            _stat_mod.S_IMODE(_st.st_mode),
+            _st.st_uid,
+            _st.st_gid,
+            os.access(pcap_path, os.R_OK),
+            os.access(pcap_path, os.F_OK),
+        )
+    except Exception as _e:
+        logger.error("[tshark-debug] os.stat failed: %s", _e)
+    try:
+        with open(pcap_path, "rb") as _f:
+            _magic = _f.read(4)
+        logger.info("[tshark-debug] Python open OK, pcap magic=%r", _magic)
+    except PermissionError as _e:
+        logger.error("[tshark-debug] Python open PermissionError: %s", _e)
+    except Exception as _e:
+        logger.error("[tshark-debug] Python open error: %s", _e)
+    try:
+        with open("/proc/self/attr/current") as _f:
+            _aa = _f.read().strip()
+        logger.info("[tshark-debug] AppArmor label on this process: %r", _aa)
+    except Exception:
+        logger.info("[tshark-debug] AppArmor label: unavailable (not on Linux or no AppArmor)")
+    # ── END DEBUG ─────────────────────────────────────────────────────────────────────
 
     if fields is None:
         fields = TSHARK_FIELDS
@@ -283,10 +319,15 @@ def get_pcap_metadata(pcap_path: str) -> dict[str, Any]:
     }
 
     if capinfos_bin and os.path.exists(capinfos_bin):
-        result = subprocess.run(
+        logger.info("[tshark-debug] running capinfos: %r on %r", capinfos_bin, pcap_path)
+        _cap_result = subprocess.run(
             [capinfos_bin, "-M", pcap_path], capture_output=True, text=True, timeout=30
         )
-        for line in result.stdout.splitlines():
+        logger.info(
+            "[tshark-debug] capinfos rc=%d stderr=%r",
+            _cap_result.returncode, _cap_result.stderr[:300],
+        )
+        for line in _cap_result.stdout.splitlines():
             if ":" in line:
                 k, _, v = line.partition(":")
                 k = k.strip().lower().replace(" ", "_")
